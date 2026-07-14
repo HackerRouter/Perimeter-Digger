@@ -1,0 +1,28 @@
+{
+	"schemaVersion": 1,
+	"id": "perimeter-digger",
+	"version": "${version}",
+	"name": "Perimeter Digger",
+	"description": "A staged Baritone-powered perimeter mining controller.",
+	"authors": [
+		"hackerrouter"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/perimeter-digger/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"main": [
+			"hackerrouter.perimeterdigger.PerimeterDigger"
+		],
+		"client": [
+			"hackerrouter.perimeterdigger.client.PerimeterDiggerClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.1.1",
+		"java": ">=25",
+		"fabric-api": "*",
+		"baritone": "*"
+	}
+}
