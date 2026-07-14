@@ -9,7 +9,8 @@ public final class PerimeterConfig {
 	public int schemaVersion = 1;
 	public Integer diggingMinY;
 	public Integer diggingMaxY;
-	public PositionConfig supplyPoint;
+	public PositionConfig consumableSupplyPoint;
+	public PositionConfig durabilitySupplyPoint;
 	public PositionConfig perimeterPortalOverworld;
 	public PositionConfig perimeterPortalNether;
 	public PositionConfig repairPortalOverworld;

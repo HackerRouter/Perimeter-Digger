@@ -3,11 +3,11 @@
 	"id": "perimeter-digger",
 	"version": "${version}",
 	"name": "Perimeter Digger",
-	"description": "A staged Baritone-powered perimeter mining controller.",
+	"description": "A staged Baritone-powered perimeter auto miner.",
 	"authors": [
-		"hackerrouter"
+		"HackerRouter"
 	],
-	"license": "CC0-1.0",
+	"license": "MIT",
 	"icon": "assets/perimeter-digger/icon.png",
 	"environment": "client",
 	"entrypoints": {

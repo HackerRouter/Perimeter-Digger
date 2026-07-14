@@ -38,7 +38,8 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 public final class PerimeterCommand {
 	private static final List<String> POINT_KEYS = List.of(
-			"supply_point",
+			"consumable_supply_point",
+			"durability_supply_point",
 			"perimeter_portal_overworld",
 			"perimeter_portal_nether",
 			"repair_portal_overworld",
@@ -62,7 +63,9 @@ public final class PerimeterCommand {
 				.then(literal("stop").executes(this::stop))
 				.then(literal("pause").executes(this::pause))
 				.then(literal("resume").executes(this::resume))
-				.then(literal("status").executes(this::status))
+				.then(literal("status")
+						.executes(this::status)
+						.then(literal("clear").executes(this::clearStatus)))
 				.then(literal("reload").executes(this::reload));
 		root.then(buildDetect());
 		root.then(buildPlan());
@@ -73,7 +76,11 @@ public final class PerimeterCommand {
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildDebug() {
 		return literal("debug")
-				.then(literal("stage5").executes(this::debugStage5));
+				.then(literal("stage5").executes(this::debugStage5))
+				.then(literal("stage6")
+						.then(literal("consumables").executes(context -> debugStage6(context, false)))
+						.then(literal("durability").executes(context -> debugStage6(context, true))))
+				.then(literal("stage7").executes(this::debugStage7));
 	}
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildPlan() {
@@ -372,7 +379,8 @@ public final class PerimeterCommand {
 	private void setPoint(String key, PositionConfig position) {
 		PerimeterConfig config = configs.get();
 		switch (key) {
-			case "supply_point" -> config.supplyPoint = position;
+			case "consumable_supply_point" -> config.consumableSupplyPoint = position;
+			case "durability_supply_point" -> config.durabilitySupplyPoint = position;
 			case "perimeter_portal_overworld" -> config.perimeterPortalOverworld = position;
 			case "perimeter_portal_nether" -> config.perimeterPortalNether = position;
 			case "repair_portal_overworld" -> config.repairPortalOverworld = position;
@@ -447,6 +455,32 @@ public final class PerimeterCommand {
 		}
 	}
 
+	private int debugStage6(CommandContext<FabricClientCommandSource> context, boolean durability) {
+		try {
+			List<String> missing = controller.debugStage6(configs.get(), durability);
+			if (!missing.isEmpty()) {
+				return error(context, "Cannot start stage 6 debug. Missing or invalid: " + String.join(", ", missing) + ".");
+			}
+			feedback(context, "Started stage 6 " + (durability ? "durability" : "consumables") + " debug flow.");
+			return 1;
+		} catch (RuntimeException exception) {
+			return error(context, exception.getMessage());
+		}
+	}
+
+	private int debugStage7(CommandContext<FabricClientCommandSource> context) {
+		try {
+			List<String> missing = controller.debugStage7(configs.get());
+			if (!missing.isEmpty()) {
+				return error(context, "Cannot start stage 7 debug. Missing or invalid: " + String.join(", ", missing) + ".");
+			}
+			feedback(context, "Started stage 7 repair debug flow.");
+			return 1;
+		} catch (RuntimeException exception) {
+			return error(context, exception.getMessage());
+		}
+	}
+
 	private int stop(CommandContext<FabricClientCommandSource> context) {
 		try {
 			controller.stop();
@@ -482,6 +516,16 @@ public final class PerimeterCommand {
 		return 1;
 	}
 
+	private int clearStatus(CommandContext<FabricClientCommandSource> context) {
+		try {
+			controller.clearCachedState();
+			feedback(context, "Cleared cached automation state. Saved configuration was not changed.");
+			return 1;
+		} catch (RuntimeException exception) {
+			return error(context, exception.getMessage());
+		}
+	}
+
 	private int reload(CommandContext<FabricClientCommandSource> context) {
 		try {
 			configs.reload();
@@ -500,9 +544,12 @@ public final class PerimeterCommand {
 					+ ", detected columns=" + (config.detectedArea == null ? "unset" : config.detectedArea.columnCount)
 					+ ", unloading points=" + config.unloadingPoints.size() + ".");
 			feedback(context, "Liquid policy=" + config.liquidPolicy + ", sealing blocks=" + String.join(",", config.sealingBlocks) + ".");
-			feedback(context, "Foods=" + (config.foods.isEmpty() ? "none" : String.join(",", config.foods)) + ". Durability recovery=" + config.durabilityRecoveryMode + ". Monitor interval=10 ticks, durability threshold=16, drop radius=32.");
+			feedback(context, "Foods=" + (config.foods.isEmpty() ? "none" : String.join(",", config.foods)) + ". Durability recovery=" + config.durabilityRecoveryMode + ". Monitor interval=10 ticks, tool durability threshold=32, elytra durability threshold=32, horizontal drop radius=8.");
+			feedback(context, "Navigation: allowSprint=true, allowParkour=true, breaking enabled while navigating to perimeter portals and placement disabled for all non-mining destinations.");
+			feedback(context, "Consumable supply: food trigger=1, food target=64, firework trigger=10, firework target=128.");
 			feedback(context, "Unloading whitelist=" + (config.unloadingWhitelist.isEmpty() ? "none" : String.join(",", config.unloadingWhitelist)) + ".");
-			feedback(context, "Supply=" + value(config.supplyPoint)
+			feedback(context, "Consumable supply=" + value(config.consumableSupplyPoint)
+					+ ", durability supply=" + value(config.durabilitySupplyPoint)
 					+ ", perimeter portals=" + value(config.perimeterPortalOverworld) + " / " + value(config.perimeterPortalNether)
 					+ ", repair portals=" + value(config.repairPortalOverworld) + " / " + value(config.repairPortalNether)
 					+ ", furnace row=" + value(config.furnaceRowStart) + " / " + value(config.furnaceRowEnd) + ".");
