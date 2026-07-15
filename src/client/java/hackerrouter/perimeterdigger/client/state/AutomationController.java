@@ -18,6 +18,8 @@ import hackerrouter.perimeterdigger.client.config.FunctionConfig;
 import hackerrouter.perimeterdigger.client.config.AdvancedConfig;
 import hackerrouter.perimeterdigger.client.config.PositionConfig;
 import hackerrouter.perimeterdigger.client.config.UnloadingPointConfig;
+import hackerrouter.perimeterdigger.client.translation.LocalizedMessage;
+import hackerrouter.perimeterdigger.client.translation.Translations;
 import hackerrouter.perimeterdigger.client.navigation.InteractionPositionFinder;
 import hackerrouter.perimeterdigger.client.navigation.NavigationService;
 import net.minecraft.client.Minecraft;
@@ -66,7 +68,7 @@ public final class AutomationController {
 	private static final int STATE_HISTORY_LIMIT = 64;
 	private AutomationState state = AutomationState.IDLE;
 	private AutomationState stateBeforeEating = AutomationState.IDLE;
-	private String detail = "Stopped";
+	private LocalizedMessage detail = Translations.DETAIL.message("stopped");
 	private Instant changedAt = Instant.now();
 	private IBaritone baritone;
 	private IAreaMineProcess miningProcess;
@@ -125,10 +127,10 @@ public final class AutomationController {
 	private final SleepFlow sleep = new SleepFlow();
 
 	public List<String> start(PerimeterConfig config) {
-		transition(AutomationState.VALIDATING, "Validating mining configuration");
+		transition(AutomationState.VALIDATING, Translations.DETAIL.message("validating_mining"));
 		List<String> missing = validate(config);
 		if (!missing.isEmpty()) {
-			transition(AutomationState.ERROR, "Missing or invalid configuration: " + String.join(", ", missing));
+			transition(AutomationState.ERROR, Translations.DETAIL.message("invalid_configuration", String.join(", ", missing)));
 			return missing;
 		}
 		this.baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
@@ -168,9 +170,9 @@ public final class AutomationController {
 	}
 
 	public List<String> debugStage5(PerimeterConfig config) {
-		transition(AutomationState.VALIDATING, "Validating unloading debug configuration");
+		transition(AutomationState.VALIDATING, Translations.DETAIL.message("validating_unload_debug"));
 		if (config.unloadingPoints.isEmpty()) {
-			transition(AutomationState.ERROR, "Missing or invalid configuration: unloading_points");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("invalid_configuration", "unloading_points"));
 			return List.of("unloading_points");
 		}
 		stopProcesses();
@@ -198,9 +200,9 @@ public final class AutomationController {
 	public List<String> debugStage6(PerimeterConfig config, boolean durability) {
 		SupplyFlow.Kind kind = durability ? SupplyFlow.Kind.DURABILITY : SupplyFlow.Kind.CONSUMABLES;
 		PositionConfig point = durability ? config.durabilitySupplyPoint : config.consumableSupplyPoint;
-		transition(AutomationState.VALIDATING, "Validating supply debug configuration");
+		transition(AutomationState.VALIDATING, Translations.DETAIL.message("validating_supply_debug"));
 		if (point == null) {
-			transition(AutomationState.ERROR, "The requested supply chest point is not configured.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("requested_supply_missing"));
 			return List.of(durability ? "durability_supply_point" : "consumable_supply_point");
 		}
 		stopProcesses();
@@ -220,7 +222,7 @@ public final class AutomationController {
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
 		if (kind == SupplyFlow.Kind.DURABILITY && captureDurabilitySupplyPlan().targetHealthyCounts().isEmpty()) {
-			transition(AutomationState.ERROR, "No low-durability tool or elytra was found for durability supply debug.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("no_debug_supply_target"));
 			return List.of("low_durability_item");
 		}
 		beginSupply(kind, true);
@@ -228,10 +230,10 @@ public final class AutomationController {
 	}
 
 	public List<String> debugStage7(PerimeterConfig config) {
-		transition(AutomationState.VALIDATING, "Validating repair debug configuration");
+		transition(AutomationState.VALIDATING, Translations.DETAIL.message("validating_repair_debug"));
 		List<String> missing = validateRepairConfiguration(config);
 		if (!missing.isEmpty()) {
-			transition(AutomationState.ERROR, "Missing or invalid repair configuration: " + String.join(", ", missing) + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("invalid_repair_configuration", String.join(", ", missing)));
 			return missing;
 		}
 		stopProcesses();
@@ -247,14 +249,14 @@ public final class AutomationController {
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
 		beginRepairFlow(true);
-		if (state == AutomationState.ERROR) throw new IllegalStateException(detail);
+		if (state == AutomationState.ERROR) throw new IllegalStateException(detail.component().getString());
 		return List.of();
 	}
 
 	public List<String> debugSleep(PerimeterConfig config) {
-		transition(AutomationState.VALIDATING, "Validating sleep debug configuration");
+		transition(AutomationState.VALIDATING, Translations.DETAIL.message("validating_sleep_debug"));
 		if (config.bedPoint == null) {
-			transition(AutomationState.ERROR, "No bed point is configured.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("bed_point_missing"));
 			return List.of("bed_point");
 		}
 		stopProcesses();
@@ -269,7 +271,7 @@ public final class AutomationController {
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
 		if (!isBedTime()) {
-			transition(AutomationState.ERROR, "Sleep debug can only start at night in the Overworld.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("sleep_debug_wrong_time"));
 			return List.of("night_time");
 		}
 		beginSleepFlow(true);
@@ -403,7 +405,7 @@ public final class AutomationController {
 		clearSleepContext();
 		clearSupplyContext();
 		clearRepairContext();
-		transition(AutomationState.IDLE, "Stopped");
+		transition(AutomationState.IDLE, Translations.DETAIL.message("stopped"));
 	}
 
 	public void clearCachedState() {
@@ -414,7 +416,7 @@ public final class AutomationController {
 		lastInventoryItemCount = 0;
 		miningCompletePending = false;
 		tickCounter = 0;
-		transition(AutomationState.IDLE, "Cached automation state cleared");
+		transition(AutomationState.IDLE, Translations.DETAIL.message("cache_cleared"));
 	}
 
 	public void updateFunctions(FunctionConfig functions) {
@@ -439,7 +441,7 @@ public final class AutomationController {
 	public void pause() {
 		if (miningProcess == null || state != AutomationState.MINING) throw new IllegalStateException("No running mining task can be paused.");
 		miningProcess.pause();
-		transition(AutomationState.PAUSED, "Mining paused manually");
+		transition(AutomationState.PAUSED, Translations.DETAIL.message("mining_paused_manually"));
 	}
 
 	public void resume() {
@@ -448,7 +450,7 @@ public final class AutomationController {
 		if (status.pauseReason() == AreaMiningStatus.PauseReason.BLOCK_LIMIT_REACHED) beginDropCollection(false);
 		else {
 			miningProcess.resume();
-			transition(AutomationState.MINING, "Mining resumed");
+			transition(AutomationState.MINING, Translations.DETAIL.message("mining_resumed"));
 		}
 	}
 
@@ -456,9 +458,9 @@ public final class AutomationController {
 		return state;
 	}
 
-	public String detail() {
+	public net.minecraft.network.chat.MutableComponent detail() {
 		BlockPos target = baritone == null ? null : watchdogNavigationTarget();
-		return target == null ? detail : detail + " Target=" + target.toShortString() + ", retries=" + watchdogRetries + ".";
+		return target == null ? detail.component() : detail.component().append(Translations.DETAIL.tr("watchdog", target.toShortString(), watchdogRetries));
 	}
 
 	public Instant changedAt() {
@@ -477,9 +479,9 @@ public final class AutomationController {
 		emergencyCleanup();
 		String message = exception.getMessage();
 		String summary = exception.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
-		recordTransition(state, AutomationState.ERROR, "Unhandled automation error: " + summary);
+		recordTransition(state, AutomationState.ERROR, Translations.DETAIL.message("unhandled_error_short", summary));
 		state = AutomationState.ERROR;
-		detail = "Unhandled automation error: " + summary + ". See the game log for the full stack trace.";
+		detail = Translations.DETAIL.message("unhandled_error", summary);
 		changedAt = Instant.now();
 	}
 
@@ -506,7 +508,7 @@ public final class AutomationController {
 		clearSleepContext();
 		clearSupplyContext();
 		clearRepairContext();
-		transition(AutomationState.IDLE, "World changed");
+		transition(AutomationState.IDLE, Translations.DETAIL.message("world_changed"));
 	}
 
 	private void synchronizeMining() {
@@ -515,11 +517,12 @@ public final class AutomationController {
 			case RUNNING -> synchronize(AutomationState.MINING, progress(status));
 			case PAUSED -> {
 				if (status.pauseReason() == AreaMiningStatus.PauseReason.BLOCK_LIMIT_REACHED) beginDropCollection(false);
-				else synchronize(AutomationState.PAUSED, "Mining paused: " + status.pauseReason().name().toLowerCase(Locale.ROOT) + ". " + progress(status));
+				else synchronize(AutomationState.PAUSED, Translations.DETAIL.message("mining_paused",
+						status.pauseReason().name().toLowerCase(Locale.ROOT), progress(status).component()));
 			}
 			case COMPLETE -> beginDropCollection(true);
-			case CANCELLED -> transition(AutomationState.ERROR, "The Baritone mining task was cancelled unexpectedly.");
-			case IDLE -> transition(AutomationState.ERROR, "The Baritone mining task stopped unexpectedly.");
+			case CANCELLED -> transition(AutomationState.ERROR, Translations.DETAIL.message("mining_cancelled"));
+			case IDLE -> transition(AutomationState.ERROR, Translations.DETAIL.message("mining_stopped_unexpectedly"));
 		}
 	}
 
@@ -534,7 +537,7 @@ public final class AutomationController {
 				: Math.max(1L, (long) Math.max(0, emptySlots - advanced.inventoryReservedSlots) * advanced.miningBlocksPerEmptySlot);
 		navigation.stopWalking();
 		miningProcess.mineArea(area, new AreaMiningOptions(liquidPolicy, sealingBlocks, blockLimit));
-		transition(AutomationState.MINING, "Mining cycle started. Block limit: " + blockLimit + ". Empty slots: " + emptySlots + ".");
+		transition(AutomationState.MINING, Translations.DETAIL.message("mining_started", blockLimit, emptySlots));
 	}
 
 	private void beginDropCollection(boolean miningComplete) {
@@ -544,7 +547,7 @@ public final class AutomationController {
 			navigation.stopWalking();
 			if (miningComplete) {
 				if (unloadEnabled) requestUnload();
-				else transition(AutomationState.COMPLETE, "Mining complete. Drop collection and unloading are disabled.");
+				else transition(AutomationState.COMPLETE, Translations.DETAIL.message("mining_complete_collection_unload_disabled"));
 			} else {
 				startMiningCycle();
 			}
@@ -553,7 +556,7 @@ public final class AutomationController {
 		disablePlacementForNavigation();
 		stableInventoryScans = 0;
 		lastInventoryItemCount = inventoryItemCount();
-		transition(AutomationState.COLLECTING_DROPS, "Collecting drops within a " + advanced.dropCollectionRadius + "-block horizontal radius.");
+		transition(AutomationState.COLLECTING_DROPS, Translations.DETAIL.message("collecting_drops", advanced.dropCollectionRadius));
 		tickDropCollection();
 	}
 
@@ -562,7 +565,7 @@ public final class AutomationController {
 			if (unloadEnabled) requestUnload();
 			else {
 				restoreAllowPlace();
-				if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining and drop collection complete. Unloading is disabled.");
+				if (miningCompletePending) transition(AutomationState.COMPLETE, Translations.DETAIL.message("mining_collection_complete_unload_disabled"));
 				else startMiningCycle();
 			}
 			return;
@@ -577,18 +580,18 @@ public final class AutomationController {
 			if (unloadEnabled) requestUnload();
 			else {
 				restoreAllowPlace();
-				if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining and drop collection complete. Unloading is disabled.");
+				if (miningCompletePending) transition(AutomationState.COMPLETE, Translations.DETAIL.message("mining_collection_complete_unload_disabled"));
 				else startMiningCycle();
 			}
 			return;
 		}
 		if (goals.isEmpty()) {
 			navigation.stopWalking();
-			synchronize(AutomationState.COLLECTING_DROPS, "Waiting for inventory growth. Items: " + itemCount + ". Stable scans: " + stableInventoryScans + "/" + dropStableScanLimit() + ".");
+			synchronize(AutomationState.COLLECTING_DROPS, Translations.DETAIL.message("waiting_inventory_growth", itemCount, stableInventoryScans, dropStableScanLimit()));
 			return;
 		}
 		navigation.walk(new GoalComposite(goals.toArray(new Goal[0])));
-		synchronize(AutomationState.COLLECTING_DROPS, "Collecting " + goals.size() + " nearby drop targets. Items: " + itemCount + ". Stable scans: " + stableInventoryScans + "/" + dropStableScanLimit() + ".");
+		synchronize(AutomationState.COLLECTING_DROPS, Translations.DETAIL.message("collecting_drop_targets", goals.size(), itemCount, stableInventoryScans, dropStableScanLimit()));
 	}
 
 	private List<Goal> nearbyDropGoals() {
@@ -621,7 +624,7 @@ public final class AutomationController {
 
 	private void beginRepairFlow(boolean debug) {
 		if (!baritone.getPlayerContext().world().dimension().equals(Level.OVERWORLD)) {
-			transition(AutomationState.ERROR, "The remote repair flow must start in the Overworld.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("repair_requires_overworld"));
 			return;
 		}
 		if (!validateRepairConfigurationValues()) return;
@@ -632,9 +635,7 @@ public final class AutomationController {
 		returnAction = ReturnAction.AFTER_REPAIR;
 		repair.plan = captureRepairPlan(debug);
 		if (repair.plan.targetCounts().isEmpty()) {
-			transition(AutomationState.ERROR, debug
-					? "No damaged tool or elytra requires repair debug."
-					: "No low-durability tool or elytra requires remote repair.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message(debug ? "no_debug_repair_target" : "no_repair_target"));
 			return;
 		}
 		repair.furnaces = furnaceRow();
@@ -648,7 +649,7 @@ public final class AutomationController {
 	private boolean validateRepairConfigurationValues() {
 		if (perimeterPortalOverworld == null || perimeterPortalNether == null || repairPortalOverworld == null
 				|| repairPortalNether == null || furnaceRowStart == null || furnaceRowEnd == null) {
-			transition(AutomationState.ERROR, "Remote repair portal or furnace configuration is incomplete.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("repair_configuration_incomplete"));
 			return false;
 		}
 		return true;
@@ -696,7 +697,7 @@ public final class AutomationController {
 		repair.flying = true;
 		repair.flightAttempts++;
 		navigation.fly(repair.navigationTarget);
-		transition(navigationState, "Flying to repair target " + repair.navigationTarget.toShortString() + ".");
+		transition(navigationState, Translations.DETAIL.message("flying_repair_target", repair.navigationTarget.toShortString()));
 	}
 
 	private void startWalkingForRepair(AutomationState navigationState) {
@@ -709,7 +710,7 @@ public final class AutomationController {
 		} else {
 			navigation.walk(new GoalBlock(repair.navigationTarget));
 		}
-		transition(navigationState, "Walking to repair target " + repair.navigationTarget.toShortString() + ".");
+		transition(navigationState, Translations.DETAIL.message("walking_repair_target", repair.navigationTarget.toShortString()));
 	}
 
 	private void tickRepairNavigation() {
@@ -739,7 +740,7 @@ public final class AutomationController {
 			return;
 		}
 		restoreRepairNavigationSettings();
-		transition(AutomationState.ERROR, "Repair target is unreachable: " + repair.navigationTarget.toShortString() + ".");
+		transition(AutomationState.ERROR, Translations.DETAIL.message("repair_target_unreachable", repair.navigationTarget.toShortString()));
 	}
 
 	private void restoreRepairNavigationSettings() {
@@ -756,12 +757,12 @@ public final class AutomationController {
 		repair.postPortalNavigationState = null;
 		AutomationState portalState = repair.stage == RepairFlow.Stage.OUTBOUND_PERIMETER_PORTAL || repair.stage == RepairFlow.Stage.RETURN_PERIMETER_PORTAL
 				? AutomationState.ENTERING_PERIMETER_PORTAL : AutomationState.ENTERING_REPAIR_PORTAL;
-		transition(portalState, "Waiting inside repair portal " + repair.navigationTarget.toShortString() + ".");
+		transition(portalState, Translations.DETAIL.message("waiting_repair_portal", repair.navigationTarget.toShortString()));
 	}
 
 	private void tickEnteringRepairPortal() {
 		if (++repair.portalWaitTicks > ticks(advanced.portalTransitionTimeoutSeconds)) {
-			transition(AutomationState.ERROR, "Timed out while waiting for the repair portal transition.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("repair_portal_timeout"));
 			return;
 		}
 		baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, false);
@@ -805,7 +806,7 @@ public final class AutomationController {
 				repair.stage = RepairFlow.Stage.RETURN_TO_MINE;
 				beginClearRepairPortal(position(perimeterPortalOverworld), null, null);
 			}
-			default -> transition(AutomationState.ERROR, "Unexpected repair portal transition.");
+			default -> transition(AutomationState.ERROR, Translations.DETAIL.message("unexpected_repair_portal"));
 		}
 	}
 
@@ -817,9 +818,8 @@ public final class AutomationController {
 		repair.postPortalNavigationState = nextState;
 		disablePlacementForNavigation();
 		if (!repair.portalExitCandidates.isEmpty()) startPortalExitPath();
-		transition(AutomationState.CLEARING_REPAIR_PORTAL, repair.portalExitCandidates.isEmpty()
-				? "Waiting for safe portal exit positions to load near " + portal.toShortString() + "."
-				: "Walking clear of repair portal " + portal.toShortString() + ".");
+		transition(AutomationState.CLEARING_REPAIR_PORTAL, Translations.DETAIL.message(
+				repair.portalExitCandidates.isEmpty() ? "waiting_portal_exits" : "walking_clear_portal", portal.toShortString()));
 	}
 
 	private void tickClearRepairPortal() {
@@ -836,17 +836,17 @@ public final class AutomationController {
 		if (navigation.isWalking()) return;
 		if (++repair.portalExitSearchScans > monitorScans(advanced.portalExitTimeoutSeconds)) {
 			restoreAllowPlace();
-			transition(AutomationState.ERROR, "No reachable safe portal exit position was found within " + advanced.portalExitTimeoutSeconds + " seconds.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("portal_exit_timeout", advanced.portalExitTimeoutSeconds));
 			return;
 		}
 		repair.portalExitOrigin = currentClientPlayerFeet();
 		repair.portalExitCandidates = findPortalExitCandidates(repair.portalExitOrigin);
 		if (!repair.portalExitCandidates.isEmpty()) {
 			startPortalExitPath();
-			synchronize(AutomationState.CLEARING_REPAIR_PORTAL, "Walking clear of the repair portal.");
+			synchronize(AutomationState.CLEARING_REPAIR_PORTAL, Translations.DETAIL.message("walking_clear_portal_short"));
 			return;
 		}
-		synchronize(AutomationState.CLEARING_REPAIR_PORTAL, "Waiting for safe portal exit positions to load.");
+		synchronize(AutomationState.CLEARING_REPAIR_PORTAL, Translations.DETAIL.message("waiting_portal_exits_short"));
 	}
 
 	private void startPortalExitPath() {
@@ -963,7 +963,7 @@ public final class AutomationController {
 		if (point == null) {
 			stopProcesses();
 			restoreAllowPlace();
-			transition(AutomationState.ERROR, "No " + kind.displayName + " supply point is configured.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("supply_point_missing", kind.displayName));
 			return;
 		}
 		supply.previousState = state;
@@ -979,7 +979,7 @@ public final class AutomationController {
 		supply.durabilityPlan = kind == SupplyFlow.Kind.DURABILITY ? captureDurabilitySupplyPlan() : null;
 		if (kind == SupplyFlow.Kind.DURABILITY && supply.durabilityPlan.targetHealthyCounts().isEmpty()) {
 			restoreAllowPlace();
-			transition(AutomationState.ERROR, "No low-durability tool or elytra requires supply replacement.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("no_supply_replacement_target"));
 			return;
 		}
 		stopProcesses();
@@ -1034,7 +1034,7 @@ public final class AutomationController {
 			supply.stand = chest.above();
 			navigation.walk(new GoalBlock(supply.stand));
 		}
-		transition(supplyNavigationState(), "Walking to the " + supply.kind.displayName + " supply chest " + supply.stand.toShortString() + ".");
+		transition(supplyNavigationState(), Translations.DETAIL.message("walking_supply", supply.kind.displayName, supply.stand.toShortString()));
 	}
 
 	private void tickSupplyNavigation() {
@@ -1062,7 +1062,7 @@ public final class AutomationController {
 		}
 		restoreElytraMinimumDurability();
 		restoreElytraFireworkReserve();
-		transition(AutomationState.ERROR, "The " + supply.kind.displayName + " supply chest is unreachable: " + supply.stand.toShortString() + ".");
+		transition(AutomationState.ERROR, Translations.DETAIL.message("supply_unreachable", supply.kind.displayName, supply.stand.toShortString()));
 	}
 
 	private void startFlyingToSupply() {
@@ -1076,7 +1076,7 @@ public final class AutomationController {
 		supply.flying = true;
 		supply.flightAttempts++;
 		navigation.fly(supply.stand);
-		transition(supplyNavigationState(), "Flying to the " + supply.kind.displayName + " supply point " + supply.stand.toShortString() + ".");
+		transition(supplyNavigationState(), Translations.DETAIL.message("flying_supply", supply.kind.displayName, supply.stand.toShortString()));
 	}
 
 	private void disablePlacementForNavigation() {
@@ -1108,7 +1108,7 @@ public final class AutomationController {
 		restoreElytraFireworkReserve();
 		supply.phase = supply.kind == SupplyFlow.Kind.DURABILITY ? SupplyFlow.Phase.PREPARING : SupplyFlow.Phase.OPENING;
 		supply.interactionTicks = 0;
-		transition(supplyInteractionState(), "Preparing the " + supply.kind.displayName + " supply chest.");
+		transition(supplyInteractionState(), Translations.DETAIL.message("preparing_supply", supply.kind.displayName));
 	}
 
 	private void tickSupplyInteraction() {
@@ -1127,7 +1127,7 @@ public final class AutomationController {
 		if (isLowMonitoredItem(chest)) {
 			int empty = firstEmptyInventorySlot();
 			if (empty < 0) {
-				transition(AutomationState.ERROR, "No empty inventory slot is available for the low-durability chest item.");
+				transition(AutomationState.ERROR, Translations.DETAIL.message("no_slot_chest_item"));
 				return;
 			}
 			queuePickupSwap(CHEST_MENU_SLOT, menuSlot(empty));
@@ -1137,7 +1137,7 @@ public final class AutomationController {
 		if (isLowMonitoredItem(offhand)) {
 			int empty = firstEmptyInventorySlot();
 			if (empty < 0) {
-				transition(AutomationState.ERROR, "No empty inventory slot is available for the low-durability offhand item.");
+				transition(AutomationState.ERROR, Translations.DETAIL.message("no_slot_offhand_item"));
 				return;
 			}
 			queuePickupSwap(OFFHAND_MENU_SLOT, menuSlot(empty));
@@ -1153,7 +1153,7 @@ public final class AutomationController {
 			return;
 		}
 		if (supply.interactionTicks++ > ticks(advanced.supplyInteractionTimeoutSeconds)) {
-			transition(AutomationState.ERROR, "Timed out while opening the " + supply.kind.displayName + " supply chest.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("supply_open_timeout", supply.kind.displayName));
 			return;
 		}
 		BlockPos chest = new BlockPos(supply.point.x, supply.point.y, supply.point.z);
@@ -1169,7 +1169,7 @@ public final class AutomationController {
 
 	private void transferSupplyItems() {
 		if (baritone.getPlayerContext().player().containerMenu instanceof InventoryMenu) {
-			transition(AutomationState.ERROR, "The supply chest closed before transfer completed.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("supply_closed"));
 			return;
 		}
 		if (supply.kind == SupplyFlow.Kind.CONSUMABLES) transferConsumables();
@@ -1193,7 +1193,7 @@ public final class AutomationController {
 			if (source.isEmpty() || !accepted.contains(source.getItem())) continue;
 			int targetInventorySlot = findInventoryTarget(source);
 			if (targetInventorySlot < 0) {
-				transition(AutomationState.ERROR, "No inventory space is available for " + name + ".");
+				transition(AutomationState.ERROR, Translations.DETAIL.message("no_inventory_space", name));
 				return false;
 			}
 			ItemStack target = baritone.getPlayerContext().player().getInventory().getItem(targetInventorySlot);
@@ -1201,10 +1201,10 @@ public final class AutomationController {
 			int transfer = Math.min(needed, Math.min(source.getCount(), capacity));
 			boolean mergeWhole = transfer == source.getCount() || !target.isEmpty() && transfer == capacity;
 			queueExactChestTransfer(sourceSlot, chestInventoryMenuSlot(targetInventorySlot, chestSlots), transfer, source.getCount(), mergeWhole);
-			synchronize(supplyInteractionState(), "Transferring " + transfer + " " + name + " from the supply chest.");
+			synchronize(supplyInteractionState(), Translations.DETAIL.message("supply_transferring", transfer, name));
 			return false;
 		}
-		transition(AutomationState.ERROR, "The supply chest does not contain enough " + name + ".");
+		transition(AutomationState.ERROR, Translations.DETAIL.message("supply_insufficient", name));
 		return false;
 	}
 
@@ -1233,7 +1233,7 @@ public final class AutomationController {
 					return;
 				}
 			}
-			transition(AutomationState.ERROR, "The durability supply chest has no healthy replacement for " + BuiltInRegistries.ITEM.getKey(requirement.getKey()) + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("no_healthy_replacement", BuiltInRegistries.ITEM.getKey(requirement.getKey())));
 			return;
 		}
 		baritone.getPlayerContext().player().closeContainer();
@@ -1248,7 +1248,7 @@ public final class AutomationController {
 			if (!equipped.is(supply.durabilityPlan.chestItem()) || remainingDurability(equipped) <= durabilityThreshold(equipped)) {
 				int source = findHealthyInventoryItem(supply.durabilityPlan.chestItem());
 				if (source < 0) {
-					transition(AutomationState.ERROR, "The recovered elytra could not be equipped.");
+					transition(AutomationState.ERROR, Translations.DETAIL.message("equip_elytra_failed"));
 					return;
 				}
 				queuePickupSwap(menuSlot(source), CHEST_MENU_SLOT);
@@ -1260,7 +1260,7 @@ public final class AutomationController {
 			if (!offhand.is(supply.durabilityPlan.offhandItem()) || remainingDurability(offhand) <= durabilityThreshold(offhand)) {
 				int source = findHealthyInventoryItem(supply.durabilityPlan.offhandItem());
 				if (source < 0) {
-					transition(AutomationState.ERROR, "The recovered offhand item could not be equipped.");
+					transition(AutomationState.ERROR, Translations.DETAIL.message("equip_offhand_failed"));
 					return;
 				}
 				queuePickupSwap(menuSlot(source), OFFHAND_MENU_SLOT);
@@ -1273,7 +1273,7 @@ public final class AutomationController {
 			if (!selected.is(supply.durabilityPlan.selectedItem()) || remainingDurability(selected) <= durabilityThreshold(selected)) {
 				int source = findHealthyInventoryItem(supply.durabilityPlan.selectedItem());
 				if (source < 0) {
-					transition(AutomationState.ERROR, "The recovered selected tool could not be equipped.");
+					transition(AutomationState.ERROR, Translations.DETAIL.message("equip_tool_failed"));
 					return;
 				}
 				baritone.getPlayerContext().playerController().windowClick(
@@ -1333,7 +1333,7 @@ public final class AutomationController {
 			sleep.stand = sleep.bed.above();
 			navigation.walk(new GoalBlock(sleep.stand));
 		}
-		transition(AutomationState.NAVIGATING_TO_BED, "Walking to a reachable position near bed " + sleep.bed.toShortString() + ".");
+		transition(AutomationState.NAVIGATING_TO_BED, Translations.DETAIL.message("walking_bed", sleep.bed.toShortString()));
 	}
 
 	private void startFlyingToBed() {
@@ -1347,7 +1347,7 @@ public final class AutomationController {
 		sleep.flying = true;
 		sleep.flightAttempts++;
 		navigation.fly(sleep.stand);
-		transition(AutomationState.NAVIGATING_TO_BED, "Flying near bed " + sleep.bed.toShortString() + ".");
+		transition(AutomationState.NAVIGATING_TO_BED, Translations.DETAIL.message("flying_bed", sleep.bed.toShortString()));
 	}
 
 	private void tickBedNavigation() {
@@ -1381,24 +1381,24 @@ public final class AutomationController {
 			return;
 		}
 		restoreAllowPlace();
-		transition(AutomationState.ERROR, "No reachable position was found near bed " + sleep.bed.toShortString() + ".");
+		transition(AutomationState.ERROR, Translations.DETAIL.message("bed_unreachable", sleep.bed.toShortString()));
 	}
 
 	private void beginSleeping() {
 		var world = Minecraft.getInstance().level;
 		if (world == null || !world.isLoaded(sleep.bed) || !(world.getBlockState(sleep.bed).getBlock() instanceof BedBlock)) {
-			transition(AutomationState.ERROR, "The configured bed point does not contain a bed: " + sleep.bed.toShortString() + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("configured_bed_invalid", sleep.bed.toShortString()));
 			return;
 		}
 		sleep.interactionTicks = 0;
 		sleep.entered = false;
-		transition(AutomationState.SLEEPING, "Entering bed " + sleep.bed.toShortString() + ".");
+		transition(AutomationState.SLEEPING, Translations.DETAIL.message("entering_bed", sleep.bed.toShortString()));
 	}
 
 	private void tickSleeping() {
 		if (baritone.getPlayerContext().player().isSleeping()) {
 			sleep.entered = true;
-			synchronize(AutomationState.SLEEPING, "Sleeping until morning.");
+			synchronize(AutomationState.SLEEPING, Translations.DETAIL.message("sleeping"));
 			return;
 		}
 		if (sleep.entered || !isBedTime()) {
@@ -1406,7 +1406,7 @@ public final class AutomationController {
 			return;
 		}
 		if (sleep.interactionTicks++ > ticks(advanced.supplyInteractionTimeoutSeconds)) {
-			transition(AutomationState.ERROR, "Timed out while entering bed " + sleep.bed.toShortString() + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("bed_timeout", sleep.bed.toShortString()));
 			return;
 		}
 		Vec3 hitLocation = Vec3.atCenterOf(sleep.bed);
@@ -1440,7 +1440,7 @@ public final class AutomationController {
 		if (repair.machineTakeoffPoint == null) repair.machineTakeoffPoint = baritone.getPlayerContext().playerFeet();
 		repair.furnacePhase = RepairFlow.FurnacePhase.PREPARING;
 		repair.interactionTicks = 0;
-		transition(AutomationState.REPAIRING, "Preparing furnace " + (repair.furnaceIndex + 1) + "/" + repair.furnaces.size() + ".");
+		transition(AutomationState.REPAIRING, Translations.DETAIL.message("preparing_furnace", repair.furnaceIndex + 1, repair.furnaces.size()));
 	}
 
 	private void tickRepairing() {
@@ -1498,7 +1498,7 @@ public final class AutomationController {
 			return;
 		}
 		if (repair.interactionTicks++ > ticks(advanced.furnaceInteractionTimeoutSeconds)) {
-			transition(AutomationState.ERROR, "Timed out while opening furnace " + (repair.furnaceIndex + 1) + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("furnace_open_timeout", repair.furnaceIndex + 1));
 			return;
 		}
 		BlockPos furnace = repair.furnaces.get(repair.furnaceIndex);
@@ -1514,7 +1514,7 @@ public final class AutomationController {
 
 	private void takeRepairOutput() {
 		if (!(baritone.getPlayerContext().player().containerMenu instanceof AbstractFurnaceMenu menu)) {
-			transition(AutomationState.ERROR, "The furnace closed before its output was collected.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("furnace_closed"));
 			return;
 		}
 		ItemStack output = menu.getSlot(2).getItem();
@@ -1527,7 +1527,7 @@ public final class AutomationController {
 		repair.furnacePhase = RepairFlow.FurnacePhase.WAITING_FOR_REPAIR;
 		repair.durabilitySnapshot = repairDurabilityTotal();
 		repair.stableTicks = 0;
-		synchronize(AutomationState.REPAIRING, "Collecting experience and dropping the furnace output.");
+			synchronize(AutomationState.REPAIRING, Translations.DETAIL.message("collecting_experience"));
 	}
 
 	private void finishRepairFurnace() {
@@ -1540,7 +1540,7 @@ public final class AutomationController {
 		}
 		if (selectNextRepairTool()) {
 			repair.stableTicks = 0;
-			synchronize(AutomationState.REPAIRING, "Switched to the next repair tool while absorbing remaining experience.");
+			synchronize(AutomationState.REPAIRING, Translations.DETAIL.message("switched_repair_tool"));
 			return;
 		}
 		int durability = repairDurabilityTotal();
@@ -1558,7 +1558,7 @@ public final class AutomationController {
 
 	private void advanceRepairFurnace() {
 		if (++repair.furnaceIndex >= repair.furnaces.size()) {
-			if (!repairTargetsFull()) transition(AutomationState.ERROR, "The furnace row was exhausted before all repair targets reached full durability.");
+			if (!repairTargetsFull()) transition(AutomationState.ERROR, Translations.DETAIL.message("furnaces_exhausted"));
 			else beginRepairReturn();
 			return;
 		}
@@ -1770,7 +1770,7 @@ public final class AutomationController {
 		if (!unload.debugOnly && !unloadEnabled) {
 			navigation.stopWalking();
 			restoreAllowPlace();
-			if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining complete. Unloading is disabled.");
+			if (miningCompletePending) transition(AutomationState.COMPLETE, Translations.DETAIL.message("mining_complete_unload_disabled"));
 			else startMiningCycle();
 			return;
 		}
@@ -1782,7 +1782,7 @@ public final class AutomationController {
 		stopProcesses();
 		if (unloadingPoints.isEmpty()) {
 			restoreAllowPlace();
-			transition(AutomationState.ERROR, "Inventory is full but no unloading point is configured.");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("unload_point_missing"));
 			return;
 		}
 		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
@@ -1803,7 +1803,7 @@ public final class AutomationController {
 
 	private void tickNavigateToUnload() {
 		if (navigation.isFlying()) {
-			synchronize(AutomationState.NAVIGATING_TO_UNLOAD, "Flying near unloading point " + unload.point.name() + ".");
+			synchronize(AutomationState.NAVIGATING_TO_UNLOAD, Translations.DETAIL.message("flying_unload", unload.point.name()));
 			return;
 		}
 		beginUnloadApproach();
@@ -1817,7 +1817,7 @@ public final class AutomationController {
 		unload.candidateIndex = 0;
 		if (unload.candidates.isEmpty()) {
 			restoreAllowPlace();
-			transition(AutomationState.ERROR, "No loaded safe standing block was found near unloading point " + unload.point.name() + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("unload_no_loaded_stand", unload.point.name()));
 			return;
 		}
 		pathToUnloadCandidate();
@@ -1826,7 +1826,7 @@ public final class AutomationController {
 	private void pathToUnloadCandidate() {
 		UnloadFlow.Candidate candidate = unload.candidates.get(unload.candidateIndex);
 		navigation.walk(new GoalBlock(candidate.position()));
-		transition(AutomationState.APPROACHING_UNLOAD, "Walking to unloading edge " + candidate.position().toShortString() + " for " + unload.point.name() + ".");
+		transition(AutomationState.APPROACHING_UNLOAD, Translations.DETAIL.message("walking_unload_edge", candidate.position().toShortString(), unload.point.name()));
 	}
 
 	private void tickApproachingUnload() {
@@ -1835,7 +1835,7 @@ public final class AutomationController {
 			navigation.stopWalking();
 			restoreAllowPlace();
 			unload.edgePosition = unloadEdgePosition(candidate.position(), unload.point.point());
-			transition(AutomationState.POSITIONING_FOR_UNLOAD, "Moving to the safe block edge for " + unload.point.name() + ".");
+			transition(AutomationState.POSITIONING_FOR_UNLOAD, Translations.DETAIL.message("positioning_unload", unload.point.name()));
 			return;
 		}
 		if (navigation.isWalking()) return;
@@ -1846,7 +1846,7 @@ public final class AutomationController {
 		}
 		if (++unload.candidateIndex >= unload.candidates.size()) {
 			restoreAllowPlace();
-			transition(AutomationState.ERROR, "No reachable standing block was found near unloading point " + unload.point.name() + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("unload_no_reachable_stand", unload.point.name()));
 			return;
 		}
 		pathToUnloadCandidate();
@@ -1856,7 +1856,7 @@ public final class AutomationController {
 		restoreAllowPlace();
 		unload.flightAttempts++;
 		navigation.fly(target);
-		transition(AutomationState.NAVIGATING_TO_UNLOAD, "Flying near unloading point " + unload.point.name() + " at X=" + unload.point.point().x + ", Z=" + unload.point.point().z + ".");
+		transition(AutomationState.NAVIGATING_TO_UNLOAD, Translations.DETAIL.message("flying_unload_xz", unload.point.name(), unload.point.point().x, unload.point.point().z));
 	}
 
 	private void tickPositioningForUnload() {
@@ -1870,12 +1870,12 @@ public final class AutomationController {
 			baritone.getLookBehavior().updateTarget(RotationUtils.calcRotationFromVec3d(
 					baritone.getPlayerContext().playerHead(), lookTarget, baritone.getPlayerContext().playerRotations()), false);
 			baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, true);
-			synchronize(AutomationState.POSITIONING_FOR_UNLOAD, "Moving to the safe block edge for " + unload.point.name() + ".");
+			synchronize(AutomationState.POSITIONING_FOR_UNLOAD, Translations.DETAIL.message("positioning_unload", unload.point.name()));
 			return;
 		}
 		baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, false);
 		unload.settleTicks = 5;
-		transition(AutomationState.UNLOADING, "Facing unloading channel " + unload.point.name() + ".");
+		transition(AutomationState.UNLOADING, Translations.DETAIL.message("facing_unload", unload.point.name()));
 	}
 
 	private void tickUnloading() {
@@ -1894,15 +1894,15 @@ public final class AutomationController {
 		if (disposableSlot >= 0) {
 			inventoryClicks.add(new InventoryClick(menuSlot(disposableSlot), 1, ContainerInput.THROW));
 			unload.settleTicks = 1;
-			synchronize(AutomationState.UNLOADING, "Dropping mining products into " + unload.point.name() + ".");
+			synchronize(AutomationState.UNLOADING, Translations.DETAIL.message("dropping_unload", unload.point.name()));
 			return;
 		}
 		boolean debug = unload.debugOnly;
 		unload.reset();
 		baritone.getInputOverrideHandler().setInputForceState(Input.SNEAK, false);
 		if (debug) {
-			transition(AutomationState.COMPLETE, "Unloading debug flow complete.");
-		} else if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining and unloading complete.");
+			transition(AutomationState.COMPLETE, Translations.DETAIL.message("unload_debug_complete"));
+		} else if (miningCompletePending) transition(AutomationState.COMPLETE, Translations.DETAIL.message("mining_unload_complete"));
 		else beginReturnToMine();
 	}
 
@@ -2009,7 +2009,7 @@ public final class AutomationController {
 			return;
 		}
 		navigation.walk(new GoalBlock(activeReturnTarget));
-		transition(AutomationState.RETURNING_TO_MINE, "Walking to return waypoint " + activeReturnWaypoint.displayName + " " + activeReturnTarget.toShortString() + ".");
+		transition(AutomationState.RETURNING_TO_MINE, Translations.DETAIL.message("walking_return", activeReturnWaypoint.displayName, activeReturnTarget.toShortString()));
 	}
 
 	private void tickReturningToMine() {
@@ -2023,7 +2023,7 @@ public final class AutomationController {
 		}
 		if (returningByElytra) {
 			if (navigation.isFlying()) {
-				synchronize(AutomationState.RETURNING_TO_MINE, "Flying to return waypoint " + activeReturnWaypoint.displayName + " " + activeReturnTarget.toShortString() + ".");
+				synchronize(AutomationState.RETURNING_TO_MINE, Translations.DETAIL.message("flying_return", activeReturnWaypoint.displayName, activeReturnTarget.toShortString()));
 				return;
 			}
 			restoreRepairNavigationSettings();
@@ -2036,7 +2036,7 @@ public final class AutomationController {
 			return;
 		}
 		restoreAllowPlace();
-		transition(AutomationState.ERROR, "Return waypoint is unreachable: " + activeReturnTarget.toShortString() + ".");
+		transition(AutomationState.ERROR, Translations.DETAIL.message("return_unreachable", activeReturnTarget.toShortString()));
 	}
 
 	private void startFlyingBackToMine() {
@@ -2048,7 +2048,7 @@ public final class AutomationController {
 		returningByElytra = true;
 		returnFlightAttempts++;
 		navigation.fly(activeReturnTarget);
-		transition(AutomationState.RETURNING_TO_MINE, "Flying to return waypoint " + activeReturnWaypoint.displayName + " " + activeReturnTarget.toShortString() + ".");
+		transition(AutomationState.RETURNING_TO_MINE, Translations.DETAIL.message("flying_return", activeReturnWaypoint.displayName, activeReturnTarget.toShortString()));
 	}
 
 	private void finishReturnWaypoint() {
@@ -2060,7 +2060,7 @@ public final class AutomationController {
 		repair.portalWaitTicks = 0;
 		AutomationState portalState = activeReturnWaypoint == ReturnWaypoint.REPAIR_OVERWORLD || activeReturnWaypoint == ReturnWaypoint.REPAIR_NETHER
 				? AutomationState.ENTERING_REPAIR_PORTAL : AutomationState.ENTERING_PERIMETER_PORTAL;
-		transition(portalState, "Waiting inside return portal " + activeReturnTarget.toShortString() + ".");
+		transition(portalState, Translations.DETAIL.message("waiting_return_portal", activeReturnTarget.toShortString()));
 	}
 
 	private void finishReturnToMine() {
@@ -2081,19 +2081,19 @@ public final class AutomationController {
 		returnAction = ReturnAction.NONE;
 		if (completedAction == ReturnAction.AFTER_SUPPLY) clearSupplyContext();
 		if (completedAction == ReturnAction.AFTER_SUPPLY && supplyDebug) {
-			transition(AutomationState.COMPLETE, "Supply debug flow complete.");
+			transition(AutomationState.COMPLETE, Translations.DETAIL.message("supply_debug_complete"));
 		} else if (completedAction == ReturnAction.AFTER_SUPPLY && supplyPrevious == AutomationState.COLLECTING_DROPS) {
 			beginDropCollection(miningCompletePending);
 		} else if (completedAction == ReturnAction.AFTER_REPAIR && repairDebug) {
 			clearRepairContext();
-			transition(AutomationState.COMPLETE, "Repair debug flow complete.");
+			transition(AutomationState.COMPLETE, Translations.DETAIL.message("repair_debug_complete"));
 		} else if (completedAction == ReturnAction.AFTER_REPAIR) {
 			clearRepairContext();
 			if (repairPrevious == AutomationState.COLLECTING_DROPS) beginDropCollection(miningCompletePending);
 			else startMiningCycle();
 		} else if (completedAction == ReturnAction.AFTER_SLEEP) {
 			clearSleepContext();
-			if (sleepDebug) transition(AutomationState.COMPLETE, "Sleep debug flow complete.");
+			if (sleepDebug) transition(AutomationState.COMPLETE, Translations.DETAIL.message("sleep_debug_complete"));
 			else if (sleepPrevious == AutomationState.COLLECTING_DROPS) beginDropCollection(miningCompletePending);
 			else startMiningCycle();
 		} else {
@@ -2125,7 +2125,7 @@ public final class AutomationController {
 		watchdogStationaryScans = 0;
 		if (++watchdogRetries > advanced.navigationRetryCount) {
 			stopProcesses();
-			transition(AutomationState.ERROR, "Navigation made no positional progress after " + advanced.navigationRetryCount + " retries toward " + target.toShortString() + ".");
+			transition(AutomationState.ERROR, Translations.DETAIL.message("navigation_stalled", advanced.navigationRetryCount, target.toShortString()));
 			return true;
 		}
 		restartWatchedNavigation();
@@ -2340,7 +2340,7 @@ public final class AutomationController {
 		StackSlot healthy = replacement.healthy();
 		if (low.chest() || low.offhand()) {
 			queuePickupSwap(healthy.menuSlot(), low.menuSlot());
-			synchronize(state, "Replacing low-durability " + BuiltInRegistries.ITEM.getKey(low.stack().getItem()) + ".");
+			synchronize(state, Translations.DETAIL.message("replacing_item", BuiltInRegistries.ITEM.getKey(low.stack().getItem())));
 			return;
 		}
 		Inventory inventory = baritone.getPlayerContext().player().getInventory();
@@ -2351,7 +2351,7 @@ public final class AutomationController {
 					healthy.menuSlot(), inventory.getSelectedSlot(), ContainerInput.SWAP,
 					baritone.getPlayerContext().player());
 		}
-		synchronize(state, "Replaced low-durability " + BuiltInRegistries.ITEM.getKey(low.stack().getItem()) + ".");
+		synchronize(state, Translations.DETAIL.message("replaced_item", BuiltInRegistries.ITEM.getKey(low.stack().getItem())));
 	}
 
 	private boolean beginEating() {
@@ -2380,7 +2380,7 @@ public final class AutomationController {
 		Minecraft.getInstance().options.keyUse.setDown(true);
 		baritone.getPlayerContext().playerController().processRightClick(
 				baritone.getPlayerContext().player(), baritone.getPlayerContext().world(), InteractionHand.MAIN_HAND);
-		transition(AutomationState.EATING, "Eating configured food.");
+		transition(AutomationState.EATING, Translations.DETAIL.message("eating"));
 		return true;
 	}
 
@@ -2396,14 +2396,14 @@ public final class AutomationController {
 			Minecraft.getInstance().options.keyUse.setDown(false);
 			if (stateBeforeEating == AutomationState.MINING && miningProcess != null) {
 				miningProcess.resume();
-				transition(AutomationState.MINING, "Eating complete. Mining resumed.");
+				transition(AutomationState.MINING, Translations.DETAIL.message("eating_complete_mining"));
 			} else if (stateBeforeEating == AutomationState.COLLECTING_DROPS) {
-				transition(AutomationState.COLLECTING_DROPS, "Eating complete. Drop collection resumed.");
+				transition(AutomationState.COLLECTING_DROPS, Translations.DETAIL.message("eating_complete_collecting"));
 			} else if (isManagedNavigationState(stateBeforeEating)) {
-				transition(stateBeforeEating, "Eating complete. Navigation resumed.");
+				transition(stateBeforeEating, Translations.DETAIL.message("eating_complete_navigation"));
 				watchdogStationaryScans = 0;
 				restartWatchedNavigation();
-			} else transition(stateBeforeEating, "Eating complete.");
+			} else transition(stateBeforeEating, Translations.DETAIL.message("eating_complete"));
 			return;
 		}
 		Minecraft.getInstance().options.keyUse.setDown(true);
@@ -2495,7 +2495,7 @@ public final class AutomationController {
 		}
 	}
 
-	private void transition(AutomationState next, String nextDetail) {
+	private void transition(AutomationState next, LocalizedMessage nextDetail) {
 		if (next == AutomationState.ERROR) {
 			restoreAllowPlace();
 			if (repair.stage != null) {
@@ -2509,7 +2509,7 @@ public final class AutomationController {
 		changedAt = Instant.now();
 	}
 
-	private void synchronize(AutomationState next, String nextDetail) {
+	private void synchronize(AutomationState next, LocalizedMessage nextDetail) {
 		if (state != next) {
 			recordTransition(state, next, nextDetail);
 			changedAt = Instant.now();
@@ -2518,7 +2518,7 @@ public final class AutomationController {
 		detail = nextDetail;
 	}
 
-	private void recordTransition(AutomationState previous, AutomationState next, String transitionDetail) {
+	private void recordTransition(AutomationState previous, AutomationState next, LocalizedMessage transitionDetail) {
 		String dimension = "unavailable";
 		String position = "unavailable";
 		try {
@@ -2629,9 +2629,9 @@ public final class AutomationController {
 		return inventorySlot < 9 ? inventorySlot + 36 : inventorySlot;
 	}
 
-	private static String progress(AreaMiningStatus status) {
-		String remaining = status.knownRemainingBlocks() < 0L ? "scanning" : Long.toString(status.knownRemainingBlocks());
-		return "Mining progress: cycle=" + status.minedBlocks() + "/" + status.blockLimit() + ", remaining=" + remaining + ", total=" + status.estimatedTotalBlocks();
+	private static LocalizedMessage progress(AreaMiningStatus status) {
+		Object remaining = status.knownRemainingBlocks() < 0L ? Translations.VALUE.tr("scanning") : status.knownRemainingBlocks();
+		return Translations.DETAIL.message("mining_progress", status.minedBlocks(), status.blockLimit(), remaining, status.estimatedTotalBlocks());
 	}
 
 	private record StackSlot(ItemStack stack, int inventorySlot, int menuSlot, boolean offhand, boolean chest) {

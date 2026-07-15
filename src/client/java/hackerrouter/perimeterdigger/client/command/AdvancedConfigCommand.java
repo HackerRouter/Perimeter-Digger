@@ -11,6 +11,7 @@ import hackerrouter.perimeterdigger.client.config.AdvancedOption;
 import hackerrouter.perimeterdigger.client.config.AdvancedOptions;
 import hackerrouter.perimeterdigger.client.config.WorldConfigManager;
 import hackerrouter.perimeterdigger.client.state.AutomationController;
+import hackerrouter.perimeterdigger.client.translation.Translations;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.SharedSuggestionProvider;
@@ -61,9 +62,9 @@ final class AdvancedConfigCommand {
 			option.set(advanced, value);
 			configs.save();
 			controller.updateAdvanced(advanced);
-			feedback(context, category("Advanced configuration")
+			feedback(context, category(Translations.COMMAND.tr("advanced.title"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field(key, option.get(advanced)))
+					.append(field(Translations.COMMAND.tr("advanced.option." + key), option.get(advanced)))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			return 1;
 		} catch (RuntimeException exception) {
@@ -97,11 +98,12 @@ final class AdvancedConfigCommand {
 	}
 
 	private static MutableComponent line(String name, AdvancedConfig config, List<AdvancedOption> options) {
-		MutableComponent result = category(name).append(Component.literal(": ").withStyle(ChatFormatting.GRAY));
+		String groupKey = name.toLowerCase(java.util.Locale.ROOT).replace(' ', '_');
+		MutableComponent result = category(Translations.COMMAND.tr("advanced.group." + groupKey)).append(Component.literal(": ").withStyle(ChatFormatting.GRAY));
 		for (int index = 0; index < options.size(); index++) {
 			if (index > 0) result.append(separator());
 			AdvancedOption option = options.get(index);
-			result.append(field(option.label(), option.get(config)));
+			result.append(field(Translations.COMMAND.tr("advanced.option." + option.key()), option.get(config)));
 		}
 		return result.append(Component.literal(".").withStyle(ChatFormatting.GRAY));
 	}

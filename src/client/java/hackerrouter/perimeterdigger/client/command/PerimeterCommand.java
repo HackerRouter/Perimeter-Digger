@@ -19,6 +19,7 @@ import hackerrouter.perimeterdigger.client.config.WorldConfigManager;
 import hackerrouter.perimeterdigger.client.detect.BoundaryDetector;
 import hackerrouter.perimeterdigger.client.state.AutomationController;
 import hackerrouter.perimeterdigger.client.state.StateTransition;
+import hackerrouter.perimeterdigger.client.translation.Translations;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.ChatFormatting;
@@ -194,7 +195,7 @@ public final class PerimeterCommand {
 			PositionConfig position = position(context);
 			setter.accept(key, position);
 			configs.save();
-			feedback(context, "Set " + key + " to " + position + ".");
+			feedback(context, Translations.COMMAND.tr("set_value", key, position));
 			return 1;
 		}));
 	}
@@ -214,14 +215,14 @@ public final class PerimeterCommand {
 			Identifier id = BlockIdentifierArgument.getIdentifier(context, "boundaryBlock");
 			Block block = BuiltInRegistries.BLOCK.getOptional(id).orElse(null);
 			if (block == null) {
-				return error(context, "Unknown boundary block.");
+				return error(context, Translations.COMMAND.tr("error_unknown_boundary"));
 			}
 			int y = IntegerArgumentType.getInteger(context, "boundaryY");
-			feedback(context, "Detecting the enclosed area in loaded render chunks...");
+			feedback(context, Translations.COMMAND.tr("detecting"));
 			DetectedAreaConfig area = detector.detect(block, id, y);
 			configs.get().detectedArea = area;
 			configs.save();
-			feedback(context, "Detected " + area.columnCount + " mining columns across " + area.scanlines.size() + " scanline ranges. Bounds: X=" + area.minX + ".." + area.maxX + ", Z=" + area.minZ + ".." + area.maxZ + ".");
+			feedback(context, Translations.COMMAND.tr("detected", area.columnCount, area.scanlines.size(), area.minX, area.maxX, area.minZ, area.maxZ));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -237,7 +238,7 @@ public final class PerimeterCommand {
 			int minY = IntegerArgumentType.getInteger(context, "minY");
 			int maxY = IntegerArgumentType.getInteger(context, "maxY");
 			if (minY > maxY) {
-				return error(context, "minY must not be greater than maxY.");
+				return error(context, Translations.COMMAND.tr("error_inverted_y"));
 			}
 			int minX = Math.min(x0, x1);
 			int maxX = Math.max(x0, x1);
@@ -260,7 +261,7 @@ public final class PerimeterCommand {
 			config.diggingMinY = minY;
 			config.diggingMaxY = maxY;
 			configs.save();
-			feedback(context, "Planned an inclusive rectangle with " + area.columnCount + " columns. Bounds: X=" + minX + ".." + maxX + ", Z=" + minZ + ".." + maxZ + ", Y=" + minY + ".." + maxY + ".");
+			feedback(context, Translations.COMMAND.tr("planned_rectangle", area.columnCount, minX, maxX, minZ, maxZ, minY, maxY));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -274,7 +275,7 @@ public final class PerimeterCommand {
 			if (minimum) config.diggingMinY = y;
 			else config.diggingMaxY = y;
 			configs.save();
-			feedback(context, "Set " + (minimum ? "digging_min_y" : "digging_max_y") + " to " + y + ".");
+			feedback(context, Translations.COMMAND.tr("set_value", minimum ? "digging_min_y" : "digging_max_y", y));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -285,7 +286,7 @@ public final class PerimeterCommand {
 		try {
 			configs.get().liquidPolicy = policy;
 			configs.save();
-			feedback(context, "Set liquid_policy to " + policy + ".");
+			feedback(context, Translations.COMMAND.tr("set_value", "liquid_policy", policy));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -296,7 +297,7 @@ public final class PerimeterCommand {
 		try {
 			configs.get().durabilityRecoveryMode = mode;
 			configs.save();
-			feedback(context, "Set durability_recovery_mode to " + mode + ".");
+			feedback(context, Translations.COMMAND.tr("set_value", "durability_recovery_mode", mode));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -307,11 +308,11 @@ public final class PerimeterCommand {
 		try {
 			Identifier id = BlockIdentifierArgument.getIdentifier(context, "block");
 			Block block = BuiltInRegistries.BLOCK.getOptional(id).orElse(null);
-			if (block == null || block.defaultBlockState().isAir()) return error(context, "Unknown or unusable sealing block.");
+			if (block == null || block.defaultBlockState().isAir()) return error(context, Translations.COMMAND.tr("error_invalid_sealing_block"));
 			String value = id.toString();
 			if (!configs.get().sealingBlocks.contains(value)) configs.get().sealingBlocks.add(value);
 			configs.save();
-			feedback(context, "Added sealing block " + value + ".");
+			feedback(context, Translations.COMMAND.tr("added_value", configText("sealing_block"), value));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -322,10 +323,10 @@ public final class PerimeterCommand {
 		try {
 			Identifier id = BlockIdentifierArgument.getIdentifier(context, "block");
 			String value = id.toString();
-			if (!configs.get().sealingBlocks.contains(value)) return error(context, "Sealing block is not configured: " + value);
+			if (!configs.get().sealingBlocks.contains(value)) return error(context, Translations.COMMAND.tr("error_sealing_block_not_configured", value));
 			configs.get().sealingBlocks.remove(value);
 			configs.save();
-			feedback(context, "Removed sealing block " + value + ".");
+			feedback(context, Translations.COMMAND.tr("removed_value", configText("sealing_block"), value));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -336,11 +337,11 @@ public final class PerimeterCommand {
 		try {
 			Identifier id = ItemIdentifierArgument.getIdentifier(context, "item");
 			Item item = BuiltInRegistries.ITEM.getOptional(id).orElse(null);
-			if (item == null || !item.components().has(net.minecraft.core.component.DataComponents.CONSUMABLE)) return error(context, "Unknown or non-consumable food item.");
+			if (item == null || !item.components().has(net.minecraft.core.component.DataComponents.CONSUMABLE)) return error(context, Translations.COMMAND.tr("error_invalid_food"));
 			String value = id.toString();
 			if (!configs.get().foods.contains(value)) configs.get().foods.add(value);
 			configs.save();
-			feedback(context, "Added food " + value + ".");
+			feedback(context, Translations.COMMAND.tr("added_value", configText("food"), value));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -351,9 +352,9 @@ public final class PerimeterCommand {
 		try {
 			Identifier id = ItemIdentifierArgument.getIdentifier(context, "item");
 			String value = id.toString();
-			if (!configs.get().foods.remove(value)) return error(context, "Food is not configured: " + value);
+			if (!configs.get().foods.remove(value)) return error(context, Translations.COMMAND.tr("error_food_not_configured", value));
 			configs.save();
-			feedback(context, "Removed food " + value + ".");
+			feedback(context, Translations.COMMAND.tr("removed_value", configText("food"), value));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -363,11 +364,11 @@ public final class PerimeterCommand {
 	private int addUnloadingWhitelist(CommandContext<FabricClientCommandSource> context) {
 		try {
 			Identifier id = ItemIdentifierArgument.getIdentifier(context, "item");
-			if (BuiltInRegistries.ITEM.getOptional(id).isEmpty()) return error(context, "Unknown item.");
+			if (BuiltInRegistries.ITEM.getOptional(id).isEmpty()) return error(context, Translations.COMMAND.tr("error_unknown_item"));
 			String value = id.toString();
 			if (!configs.get().unloadingWhitelist.contains(value)) configs.get().unloadingWhitelist.add(value);
 			configs.save();
-			feedback(context, "Added unloading whitelist item " + value + ".");
+			feedback(context, Translations.COMMAND.tr("added_value", configText("unloading_whitelist_item"), value));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -378,9 +379,9 @@ public final class PerimeterCommand {
 		try {
 			Identifier id = ItemIdentifierArgument.getIdentifier(context, "item");
 			String value = id.toString();
-			if (!configs.get().unloadingWhitelist.remove(value)) return error(context, "Item is not in the unloading whitelist: " + value);
+			if (!configs.get().unloadingWhitelist.remove(value)) return error(context, Translations.COMMAND.tr("error_not_whitelisted", value));
 			configs.save();
-			feedback(context, "Removed unloading whitelist item " + value + ".");
+			feedback(context, Translations.COMMAND.tr("removed_value", configText("unloading_whitelist_item"), value));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -409,7 +410,7 @@ public final class PerimeterCommand {
 			PositionConfig position = position(context);
 			configs.get().unloadingPoints.put(name, new UnloadingPointConfig(position.x, position.y, position.z));
 			configs.save();
-			feedback(context, "Set unloading point " + name + " to X=" + position.x + ", minY=" + position.y + ", Z=" + position.z + ".");
+			feedback(context, Translations.COMMAND.tr("set_unloading_point", name, position.x, position.y, position.z));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -420,10 +421,10 @@ public final class PerimeterCommand {
 		try {
 			String name = normalizedName(StringArgumentType.getString(context, "name"));
 			if (configs.get().unloadingPoints.remove(name) == null) {
-				return error(context, "Unknown unloading point: " + name);
+				return error(context, Translations.COMMAND.tr("error_unknown_unloading_point", name));
 			}
 			configs.save();
-			feedback(context, "Removed unloading point " + name + ".");
+			feedback(context, Translations.COMMAND.tr("removed_value", configText("unloading_point"), name));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -434,7 +435,7 @@ public final class PerimeterCommand {
 		try {
 			configs.get().detectedArea = null;
 			configs.save();
-			feedback(context, "Cleared the detected area.");
+			feedback(context, Translations.COMMAND.tr("area_cleared"));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -447,7 +448,7 @@ public final class PerimeterCommand {
 			if (!missing.isEmpty()) {
 				return error(context, "Cannot start. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started Baritone area mining.");
+			feedback(context, Translations.COMMAND.tr("mining_started"));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -460,7 +461,7 @@ public final class PerimeterCommand {
 			if (!missing.isEmpty()) {
 				return error(context, "Cannot start unloading debug. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started unloading debug flow.");
+			feedback(context, Translations.COMMAND.tr("debug_started", configText("unloading")));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -473,7 +474,7 @@ public final class PerimeterCommand {
 			if (!missing.isEmpty()) {
 				return error(context, "Cannot start supply debug. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started " + (durability ? "durability" : "consumables") + " supply debug flow.");
+			feedback(context, Translations.COMMAND.tr("debug_started", configText(durability ? "durability_supply" : "consumable_supply")));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -486,7 +487,7 @@ public final class PerimeterCommand {
 			if (!missing.isEmpty()) {
 				return error(context, "Cannot start repair debug. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started repair debug flow.");
+			feedback(context, Translations.COMMAND.tr("debug_started", configText("repair")));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -499,7 +500,7 @@ public final class PerimeterCommand {
 			if (!missing.isEmpty()) {
 				return error(context, "Cannot start sleep debug. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started sleep debug flow.");
+			feedback(context, Translations.COMMAND.tr("debug_started", configText("sleep")));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -509,7 +510,7 @@ public final class PerimeterCommand {
 	private int stop(CommandContext<FabricClientCommandSource> context) {
 		try {
 			controller.stop();
-			feedback(context, "Stopped perimeter mining.");
+			feedback(context, Translations.COMMAND.tr("stopped"));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -519,7 +520,7 @@ public final class PerimeterCommand {
 	private int pause(CommandContext<FabricClientCommandSource> context) {
 		try {
 			controller.pause();
-			feedback(context, "Paused perimeter mining.");
+			feedback(context, Translations.COMMAND.tr("paused"));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -529,7 +530,7 @@ public final class PerimeterCommand {
 	private int resume(CommandContext<FabricClientCommandSource> context) {
 		try {
 			controller.resume();
-			feedback(context, "Resumed perimeter mining.");
+			feedback(context, Translations.COMMAND.tr("resumed"));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -537,52 +538,48 @@ public final class PerimeterCommand {
 	}
 
 	private int status(CommandContext<FabricClientCommandSource> context) {
-		feedback(context, "State: " + controller.state() + ". Detail: " + controller.detail() + ".");
+		feedback(context, Translations.COMMAND.tr("status", Translations.state(controller.state()), controller.detail()));
 		return 1;
 	}
 
 	private int showStatusHistory(CommandContext<FabricClientCommandSource> context, int limit) {
 		List<StateTransition> history = controller.stateHistory();
 		if (history.isEmpty()) {
-			feedback(context, category("State history")
+			feedback(context, category(Translations.COMMAND.tr("history.title"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
 					.append(valueComponent("none"))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			return 1;
 		}
-		feedback(context, category("State history")
-				.append(Component.literal(": newest first, showing ").withStyle(ChatFormatting.GRAY))
-				.append(valueComponent(Math.min(limit, history.size())))
-				.append(Component.literal(" of ").withStyle(ChatFormatting.GRAY))
-				.append(valueComponent(history.size()))
-				.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
+		feedback(context, Translations.COMMAND.tr("history.summary", Math.min(limit, history.size()), history.size()).withStyle(ChatFormatting.GRAY));
 		for (int index = history.size() - 1, shown = 0; index >= 0 && shown < limit; index--, shown++) {
 			StateTransition entry = history.get(index);
 			feedback(context, Component.literal("- ").withStyle(ChatFormatting.GRAY)
 					.append(valueComponent(entry.timestamp()))
 					.append(Component.literal(" ").withStyle(ChatFormatting.GRAY))
-					.append(Component.literal(entry.previousState().name()).withStyle(ChatFormatting.YELLOW))
+					.append(Translations.state(entry.previousState()).withStyle(ChatFormatting.YELLOW))
 					.append(Component.literal(" -> ").withStyle(ChatFormatting.GRAY))
-					.append(Component.literal(entry.nextState().name()).withStyle(ChatFormatting.AQUA))
+					.append(Translations.state(entry.nextState()).withStyle(ChatFormatting.AQUA))
 					.append(Component.literal(" at ").withStyle(ChatFormatting.GRAY))
 					.append(valueComponent(entry.position()))
 					.append(Component.literal(" in ").withStyle(ChatFormatting.GRAY))
 					.append(valueComponent(entry.dimension()))
-					.append(Component.literal(": " + entry.detail()).withStyle(ChatFormatting.GRAY)));
+					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
+					.append(entry.detail().component().withStyle(ChatFormatting.GRAY)));
 		}
 		return 1;
 	}
 
 	private int clearStatusHistory(CommandContext<FabricClientCommandSource> context) {
 		controller.clearStateHistory();
-		feedback(context, "Cleared state transition history.");
+		feedback(context, Translations.COMMAND.tr("history.cleared"));
 		return 1;
 	}
 
 	private int clearStatus(CommandContext<FabricClientCommandSource> context) {
 		try {
 			controller.clearCachedState();
-			feedback(context, "Cleared cached automation state. Saved configuration was not changed.");
+			feedback(context, Translations.COMMAND.tr("cache_cleared"));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -593,7 +590,7 @@ public final class PerimeterCommand {
 		try {
 			configs.reload();
 			controller.resetForWorldChange();
-			feedback(context, "Reloaded configuration for " + configs.identity() + ".");
+			feedback(context, Translations.COMMAND.tr("reloaded", configs.identity()));
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -603,44 +600,43 @@ public final class PerimeterCommand {
 	private int showConfig(CommandContext<FabricClientCommandSource> context) {
 		try {
 			PerimeterConfig config = configs.get();
-			feedback(context, category("Configuration")
+			feedback(context, category(configText("title"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("digging Y", rangeValue(config.diggingMinY, config.diggingMaxY))).append(separator())
-					.append(field("detected columns", config.detectedArea == null ? "unset" : config.detectedArea.columnCount)).append(separator())
-					.append(field("unloading points", config.unloadingPoints.size()))
+					.append(field(configText("digging_y"), rangeValue(config.diggingMinY, config.diggingMaxY))).append(separator())
+					.append(field(configText("detected_columns"), config.detectedArea == null ? "unset" : config.detectedArea.columnCount)).append(separator())
+					.append(field(configText("unloading_points"), config.unloadingPoints.size()))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
-			feedback(context, category("Liquid")
+			feedback(context, category(configText("liquid"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("policy", config.liquidPolicy)).append(separator())
-					.append(field("sealing blocks", listValue(config.sealingBlocks)))
+					.append(field(configText("policy"), config.liquidPolicy)).append(separator())
+					.append(field(configText("sealing_blocks"), listValue(config.sealingBlocks)))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
-			feedback(context, category("Resources")
+			feedback(context, category(configText("resources"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("foods", listValue(config.foods))).append(separator())
-					.append(field("durability recovery", config.durabilityRecoveryMode))
+					.append(field(configText("foods"), listValue(config.foods))).append(separator())
+					.append(field(configText("durability_recovery"), config.durabilityRecoveryMode))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
-			feedback(context, Component.literal("Navigation: allowSprint=true, allowParkour=true, breaking enabled while navigating to perimeter portals and placement disabled for all non-mining destinations.")
-					.withStyle(ChatFormatting.GRAY));
-			feedback(context, category("Unloading")
+			feedback(context, configText("navigation_note").withStyle(ChatFormatting.GRAY));
+			feedback(context, category(configText("unloading"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("whitelist", listValue(config.unloadingWhitelist)))
+					.append(field(configText("whitelist"), listValue(config.unloadingWhitelist)))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
-			feedback(context, category("Locations")
+			feedback(context, category(configText("locations"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("consumable supply chest", config.consumableSupplyPoint)).append(separator())
-					.append(field("durability supply chest", config.durabilitySupplyPoint)).append(separator())
-					.append(field("bed", config.bedPoint)).append(separator())
-					.append(field("perimeter portals", pairValue(config.perimeterPortalOverworld, config.perimeterPortalNether))).append(separator())
-					.append(field("repair portals", pairValue(config.repairPortalOverworld, config.repairPortalNether))).append(separator())
-					.append(field("furnace row", pairValue(config.furnaceRowStart, config.furnaceRowEnd)))
+					.append(field(configText("consumable_supply_chest"), config.consumableSupplyPoint)).append(separator())
+					.append(field(configText("durability_supply_chest"), config.durabilitySupplyPoint)).append(separator())
+					.append(field(configText("bed"), config.bedPoint)).append(separator())
+					.append(field(configText("perimeter_portals"), pairValue(config.perimeterPortalOverworld, config.perimeterPortalNether))).append(separator())
+					.append(field(configText("repair_portals"), pairValue(config.repairPortalOverworld, config.repairPortalNether))).append(separator())
+					.append(field(configText("furnace_row"), pairValue(config.furnaceRowStart, config.furnaceRowEnd)))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			if (config.unloadingPoints.isEmpty()) {
-				feedback(context, category("Unloading points")
+				feedback(context, category(configText("unloading_points"))
 						.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
 						.append(valueComponent("none"))
 						.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			} else {
-				feedback(context, category("Unloading points").append(Component.literal(":").withStyle(ChatFormatting.GRAY)));
+				feedback(context, category(configText("unloading_points")).append(Component.literal(":").withStyle(ChatFormatting.GRAY)));
 				config.unloadingPoints.forEach((name, point) -> feedback(context, Component.literal("- ").withStyle(ChatFormatting.GRAY)
 						.append(field(name, point))));
 			}
@@ -764,7 +760,19 @@ public final class PerimeterCommand {
 		return CommandOutput.category(value);
 	}
 
+	private static MutableComponent configText(String key) {
+		return Translations.COMMAND.tr("config." + key);
+	}
+
+	private static MutableComponent category(Component value) {
+		return CommandOutput.category(value);
+	}
+
 	private static MutableComponent field(String name, Object value) {
+		return CommandOutput.field(name, value);
+	}
+
+	private static MutableComponent field(Component name, Object value) {
 		return CommandOutput.field(name, value);
 	}
 
@@ -805,6 +813,10 @@ public final class PerimeterCommand {
 	}
 
 	private static int error(CommandContext<FabricClientCommandSource> context, String message) {
+		return CommandOutput.error(context, message);
+	}
+
+	private static int error(CommandContext<FabricClientCommandSource> context, Component message) {
 		return CommandOutput.error(context, message);
 	}
 }

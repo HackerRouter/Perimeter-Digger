@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import hackerrouter.perimeterdigger.client.config.FunctionConfig;
 import hackerrouter.perimeterdigger.client.config.WorldConfigManager;
 import hackerrouter.perimeterdigger.client.state.AutomationController;
+import hackerrouter.perimeterdigger.client.translation.Translations;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.SharedSuggestionProvider;
@@ -60,9 +61,9 @@ final class FunctionCommand {
 			}
 			configs.save();
 			controller.updateFunctions(functions);
-			feedback(context, category("Function")
+			feedback(context, category(Translations.COMMAND.tr("function.title"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field(key, enabled))
+					.append(field(Translations.COMMAND.tr("function." + key), enabled))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			return 1;
 		} catch (RuntimeException exception) {
@@ -73,15 +74,15 @@ final class FunctionCommand {
 	private int show(CommandContext<FabricClientCommandSource> context) {
 		try {
 			FunctionConfig functions = configs.get().functions;
-			feedback(context, category("Functions")
+			feedback(context, category(Translations.COMMAND.tr("function.list_title"))
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("collect drops", functions.collectDrops)).append(separator())
-					.append(field("unload", functions.unload)).append(separator())
-					.append(field("eat", functions.eat)).append(separator())
-					.append(field("durability recovery", functions.durabilityRecovery)).append(separator())
-					.append(field("resupply", functions.resupply)).append(separator())
-					.append(field("elytra navigation", functions.elytraNavigation)).append(separator())
-					.append(field("sleep", functions.sleep))
+					.append(field(Translations.COMMAND.tr("function.collect_drops"), functions.collectDrops)).append(separator())
+					.append(field(Translations.COMMAND.tr("function.unload"), functions.unload)).append(separator())
+					.append(field(Translations.COMMAND.tr("function.eat"), functions.eat)).append(separator())
+					.append(field(Translations.COMMAND.tr("function.durability_recovery"), functions.durabilityRecovery)).append(separator())
+					.append(field(Translations.COMMAND.tr("function.resupply"), functions.resupply)).append(separator())
+					.append(field(Translations.COMMAND.tr("function.elytra_navigation"), functions.elytraNavigation)).append(separator())
+					.append(field(Translations.COMMAND.tr("function.sleep"), functions.sleep))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			return 1;
 		} catch (RuntimeException exception) {
