@@ -1,5 +1,6 @@
 package hackerrouter.perimeterdigger.client;
 
+import hackerrouter.perimeterdigger.PerimeterDigger;
 import hackerrouter.perimeterdigger.client.command.PerimeterCommand;
 import hackerrouter.perimeterdigger.client.config.WorldConfigManager;
 import hackerrouter.perimeterdigger.client.state.AutomationController;
@@ -34,7 +35,9 @@ public final class PerimeterDiggerClient implements ClientModInitializer {
 				activeIdentity = identity;
 				activeDimension = dimension;
 				controller.tick();
-			} catch (RuntimeException ignored) {
+			} catch (RuntimeException exception) {
+				PerimeterDigger.LOGGER.error("Unhandled perimeter automation tick failure", exception);
+				controller.handleTickFailure(exception);
 			}
 		});
 	}

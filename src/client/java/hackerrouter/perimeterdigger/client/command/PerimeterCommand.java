@@ -14,6 +14,8 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import hackerrouter.perimeterdigger.client.config.DetectedAreaConfig;
 import hackerrouter.perimeterdigger.client.config.FunctionConfig;
 import hackerrouter.perimeterdigger.client.config.AdvancedConfig;
+import hackerrouter.perimeterdigger.client.config.AdvancedOption;
+import hackerrouter.perimeterdigger.client.config.AdvancedOptions;
 import hackerrouter.perimeterdigger.client.config.PerimeterConfig;
 import hackerrouter.perimeterdigger.client.config.PositionConfig;
 import hackerrouter.perimeterdigger.client.config.ScanlineConfig;
@@ -21,6 +23,7 @@ import hackerrouter.perimeterdigger.client.config.UnloadingPointConfig;
 import hackerrouter.perimeterdigger.client.config.WorldConfigManager;
 import hackerrouter.perimeterdigger.client.detect.BoundaryDetector;
 import hackerrouter.perimeterdigger.client.state.AutomationController;
+import hackerrouter.perimeterdigger.client.state.StateTransition;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.ChatFormatting;
@@ -33,7 +36,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
@@ -43,17 +48,6 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 public final class PerimeterCommand {
-	private static final List<String> ADVANCED_KEYS = List.of(
-			"tool_durability_threshold", "elytra_durability_threshold", "emergency_flight_durability_threshold",
-			"food_level_threshold", "health_eating_threshold", "food_resupply_trigger", "food_resupply_target",
-			"firework_resupply_trigger", "firework_resupply_target", "drop_collection_radius",
-			"drop_collection_stable_seconds", "inventory_reserved_slots", "mining_blocks_per_empty_slot",
-			"elytra_navigation_min_distance", "unload_landing_search_radius", "unload_edge_inset",
-			"navigation_stall_timeout_seconds", "navigation_retry_count", "portal_transition_cost",
-			"portal_transition_timeout_seconds", "portal_exit_timeout_seconds", "portal_exit_min_radius",
-			"portal_exit_max_radius", "portal_exit_vertical_radius", "repair_experience_stable_seconds",
-			"supply_interaction_timeout_seconds", "furnace_interaction_timeout_seconds", "flight_retry_count"
-	);
 	private static final List<String> FUNCTION_KEYS = List.of(
 			"collect_drops",
 			"unload",
@@ -92,7 +86,11 @@ public final class PerimeterCommand {
 				.then(literal("resume").executes(this::resume))
 				.then(literal("status")
 						.executes(this::status)
-						.then(literal("clear").executes(this::clearStatus)))
+						.then(literal("clear").executes(this::clearStatus))
+						.then(literal("history")
+								.executes(context -> showStatusHistory(context, 16))
+								.then(literal("all").executes(context -> showStatusHistory(context, 64)))
+								.then(literal("clear").executes(this::clearStatusHistory))))
 				.then(literal("reload").executes(this::reload));
 		root.then(buildDetect());
 		root.then(buildPlan());
@@ -109,7 +107,7 @@ public final class PerimeterCommand {
 				.then(literal("show").executes(this::showAdvancedConfig))
 				.then(literal("set")
 						.then(argument("advancedKey", StringArgumentType.word())
-								.suggests((context, builder) -> SharedSuggestionProvider.suggest(ADVANCED_KEYS, builder))
+								.suggests((context, builder) -> SharedSuggestionProvider.suggest(AdvancedOptions.keys(), builder))
 								.then(argument("advancedValue", DoubleArgumentType.doubleArg(0.0))
 										.suggests(this::suggestAdvancedValue)
 										.executes(this::setAdvancedConfig))));
@@ -585,6 +583,44 @@ public final class PerimeterCommand {
 		return 1;
 	}
 
+	private int showStatusHistory(CommandContext<FabricClientCommandSource> context, int limit) {
+		List<StateTransition> history = controller.stateHistory();
+		if (history.isEmpty()) {
+			feedback(context, category("State history")
+					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
+					.append(valueComponent("none"))
+					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
+			return 1;
+		}
+		feedback(context, category("State history")
+				.append(Component.literal(": newest first, showing ").withStyle(ChatFormatting.GRAY))
+				.append(valueComponent(Math.min(limit, history.size())))
+				.append(Component.literal(" of ").withStyle(ChatFormatting.GRAY))
+				.append(valueComponent(history.size()))
+				.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
+		for (int index = history.size() - 1, shown = 0; index >= 0 && shown < limit; index--, shown++) {
+			StateTransition entry = history.get(index);
+			feedback(context, Component.literal("- ").withStyle(ChatFormatting.GRAY)
+					.append(valueComponent(entry.timestamp()))
+					.append(Component.literal(" ").withStyle(ChatFormatting.GRAY))
+					.append(Component.literal(entry.previousState().name()).withStyle(ChatFormatting.YELLOW))
+					.append(Component.literal(" -> ").withStyle(ChatFormatting.GRAY))
+					.append(Component.literal(entry.nextState().name()).withStyle(ChatFormatting.AQUA))
+					.append(Component.literal(" at ").withStyle(ChatFormatting.GRAY))
+					.append(valueComponent(entry.position()))
+					.append(Component.literal(" in ").withStyle(ChatFormatting.GRAY))
+					.append(valueComponent(entry.dimension()))
+					.append(Component.literal(": " + entry.detail()).withStyle(ChatFormatting.GRAY)));
+		}
+		return 1;
+	}
+
+	private int clearStatusHistory(CommandContext<FabricClientCommandSource> context) {
+		controller.clearStateHistory();
+		feedback(context, "Cleared state transition history.");
+		return 1;
+	}
+
 	private int clearStatus(CommandContext<FabricClientCommandSource> context) {
 		try {
 			controller.clearCachedState();
@@ -659,12 +695,13 @@ public final class PerimeterCommand {
 			String key = StringArgumentType.getString(context, "advancedKey");
 			double value = DoubleArgumentType.getDouble(context, "advancedValue");
 			AdvancedConfig advanced = configs.get().advanced;
-			setAdvancedValue(advanced, key, value);
+			AdvancedOption option = AdvancedOptions.get(key);
+			option.set(advanced, value);
 			configs.save();
 			controller.updateAdvanced(advanced);
 			feedback(context, category("Advanced configuration")
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field(key, advancedValue(advanced, key)))
+					.append(field(key, option.get(advanced)))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			return 1;
 		} catch (RuntimeException exception) {
@@ -675,40 +712,13 @@ public final class PerimeterCommand {
 	private int showAdvancedConfig(CommandContext<FabricClientCommandSource> context) {
 		try {
 			AdvancedConfig a = configs.get().advanced;
-			feedback(context, advancedLine("Durability",
-					"tool threshold", a.toolDurabilityThreshold,
-					"elytra threshold", a.elytraDurabilityThreshold,
-					"emergency flight threshold", a.emergencyFlightDurabilityThreshold));
-			feedback(context, advancedLine("Consumables",
-					"food level threshold", a.foodLevelThreshold,
-					"health eating threshold", a.healthEatingThreshold,
-					"food trigger", a.foodResupplyTrigger,
-					"food target", a.foodResupplyTarget,
-					"firework trigger", a.fireworkResupplyTrigger,
-					"firework target", a.fireworkResupplyTarget));
-			feedback(context, advancedLine("Mining and unloading",
-					"drop radius", a.dropCollectionRadius,
-					"drop stable seconds", a.dropCollectionStableSeconds,
-					"reserved slots", a.inventoryReservedSlots,
-					"blocks per empty slot", a.miningBlocksPerEmptySlot,
-					"unload search radius", a.unloadLandingSearchRadius,
-					"unload edge inset", a.unloadEdgeInset));
-			feedback(context, advancedLine("Navigation",
-					"elytra minimum distance", a.elytraNavigationMinDistance,
-					"stall timeout seconds", a.navigationStallTimeoutSeconds,
-					"retry count", a.navigationRetryCount,
-					"flight retry count", a.flightRetryCount,
-					"portal transition cost", a.portalTransitionCost,
-					"portal transition timeout seconds", a.portalTransitionTimeoutSeconds));
-			feedback(context, advancedLine("Portal exit",
-					"timeout seconds", a.portalExitTimeoutSeconds,
-					"minimum radius", a.portalExitMinRadius,
-					"maximum radius", a.portalExitMaxRadius,
-					"vertical radius", a.portalExitVerticalRadius));
-			feedback(context, advancedLine("Interaction",
-					"repair experience stable seconds", a.repairExperienceStableSeconds,
-					"supply timeout seconds", a.supplyInteractionTimeoutSeconds,
-					"furnace timeout seconds", a.furnaceInteractionTimeoutSeconds));
+			Map<String, List<AdvancedOption>> groups = new LinkedHashMap<>();
+			for (AdvancedOption option : AdvancedOptions.all()) {
+				groups.computeIfAbsent(option.group(), ignored -> new java.util.ArrayList<>()).add(option);
+			}
+			for (Map.Entry<String, List<AdvancedOption>> group : groups.entrySet()) {
+				feedback(context, advancedLine(group.getKey(), a, group.getValue()));
+			}
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -718,102 +728,10 @@ public final class PerimeterCommand {
 	private CompletableFuture<Suggestions> suggestAdvancedValue(CommandContext<FabricClientCommandSource> context, SuggestionsBuilder builder) {
 		try {
 			String key = StringArgumentType.getString(context, "advancedKey");
-			return SharedSuggestionProvider.suggest(new String[]{advancedValue(configs.get().advanced, key).toString()}, builder);
+			return SharedSuggestionProvider.suggest(new String[]{AdvancedOptions.get(key).get(configs.get().advanced).toString()}, builder);
 		} catch (RuntimeException exception) {
 			return builder.buildFuture();
 		}
-	}
-
-	private static void setAdvancedValue(AdvancedConfig a, String key, double value) {
-		switch (key) {
-			case "tool_durability_threshold" -> a.toolDurabilityThreshold = nonNegativeInteger(key, value);
-			case "elytra_durability_threshold" -> a.elytraDurabilityThreshold = nonNegativeInteger(key, value);
-			case "emergency_flight_durability_threshold" -> a.emergencyFlightDurabilityThreshold = nonNegativeInteger(key, value);
-			case "food_level_threshold" -> a.foodLevelThreshold = rangedInteger(key, value, 0, 20);
-			case "health_eating_threshold" -> a.healthEatingThreshold = ranged(key, value, 0.0, 20.0);
-			case "food_resupply_trigger" -> {
-				int result = nonNegativeInteger(key, value);
-				if (result > a.foodResupplyTarget) throw new IllegalArgumentException(key + " cannot exceed food_resupply_target.");
-				a.foodResupplyTrigger = result;
-			}
-			case "food_resupply_target" -> {
-				int result = nonNegativeInteger(key, value);
-				if (result < a.foodResupplyTrigger) throw new IllegalArgumentException(key + " cannot be lower than food_resupply_trigger.");
-				a.foodResupplyTarget = result;
-			}
-			case "firework_resupply_trigger" -> {
-				int result = nonNegativeInteger(key, value);
-				if (result > a.fireworkResupplyTarget) throw new IllegalArgumentException(key + " cannot exceed firework_resupply_target.");
-				a.fireworkResupplyTrigger = result;
-			}
-			case "firework_resupply_target" -> {
-				int result = nonNegativeInteger(key, value);
-				if (result < a.fireworkResupplyTrigger) throw new IllegalArgumentException(key + " cannot be lower than firework_resupply_trigger.");
-				a.fireworkResupplyTarget = result;
-			}
-			case "drop_collection_radius" -> a.dropCollectionRadius = positiveInteger(key, value);
-			case "drop_collection_stable_seconds" -> a.dropCollectionStableSeconds = positive(key, value);
-			case "inventory_reserved_slots" -> a.inventoryReservedSlots = rangedInteger(key, value, 0, 35);
-			case "mining_blocks_per_empty_slot" -> a.miningBlocksPerEmptySlot = positiveInteger(key, value);
-			case "elytra_navigation_min_distance" -> a.elytraNavigationMinDistance = nonNegativeInteger(key, value);
-			case "unload_landing_search_radius" -> a.unloadLandingSearchRadius = positiveInteger(key, value);
-			case "unload_edge_inset" -> a.unloadEdgeInset = ranged(key, value, 0.0, 0.3);
-			case "navigation_stall_timeout_seconds" -> a.navigationStallTimeoutSeconds = positive(key, value);
-			case "navigation_retry_count" -> a.navigationRetryCount = nonNegativeInteger(key, value);
-			case "portal_transition_cost" -> a.portalTransitionCost = ranged(key, value, 0.0, Double.MAX_VALUE);
-			case "portal_transition_timeout_seconds" -> a.portalTransitionTimeoutSeconds = positive(key, value);
-			case "portal_exit_timeout_seconds" -> a.portalExitTimeoutSeconds = positive(key, value);
-			case "portal_exit_min_radius" -> {
-				int result = positiveInteger(key, value);
-				if (result > a.portalExitMaxRadius) throw new IllegalArgumentException(key + " cannot exceed portal_exit_max_radius.");
-				a.portalExitMinRadius = result;
-			}
-			case "portal_exit_max_radius" -> {
-				int result = positiveInteger(key, value);
-				if (result < a.portalExitMinRadius) throw new IllegalArgumentException(key + " cannot be lower than portal_exit_min_radius.");
-				a.portalExitMaxRadius = result;
-			}
-			case "portal_exit_vertical_radius" -> a.portalExitVerticalRadius = nonNegativeInteger(key, value);
-			case "repair_experience_stable_seconds" -> a.repairExperienceStableSeconds = positive(key, value);
-			case "supply_interaction_timeout_seconds" -> a.supplyInteractionTimeoutSeconds = positive(key, value);
-			case "furnace_interaction_timeout_seconds" -> a.furnaceInteractionTimeoutSeconds = positive(key, value);
-			case "flight_retry_count" -> a.flightRetryCount = positiveInteger(key, value);
-			default -> throw new IllegalArgumentException("Unknown advanced configuration key: " + key + ".");
-		}
-	}
-
-	private static Object advancedValue(AdvancedConfig a, String key) {
-		return switch (key) {
-			case "tool_durability_threshold" -> a.toolDurabilityThreshold;
-			case "elytra_durability_threshold" -> a.elytraDurabilityThreshold;
-			case "emergency_flight_durability_threshold" -> a.emergencyFlightDurabilityThreshold;
-			case "food_level_threshold" -> a.foodLevelThreshold;
-			case "health_eating_threshold" -> a.healthEatingThreshold;
-			case "food_resupply_trigger" -> a.foodResupplyTrigger;
-			case "food_resupply_target" -> a.foodResupplyTarget;
-			case "firework_resupply_trigger" -> a.fireworkResupplyTrigger;
-			case "firework_resupply_target" -> a.fireworkResupplyTarget;
-			case "drop_collection_radius" -> a.dropCollectionRadius;
-			case "drop_collection_stable_seconds" -> a.dropCollectionStableSeconds;
-			case "inventory_reserved_slots" -> a.inventoryReservedSlots;
-			case "mining_blocks_per_empty_slot" -> a.miningBlocksPerEmptySlot;
-			case "elytra_navigation_min_distance" -> a.elytraNavigationMinDistance;
-			case "unload_landing_search_radius" -> a.unloadLandingSearchRadius;
-			case "unload_edge_inset" -> a.unloadEdgeInset;
-			case "navigation_stall_timeout_seconds" -> a.navigationStallTimeoutSeconds;
-			case "navigation_retry_count" -> a.navigationRetryCount;
-			case "portal_transition_cost" -> a.portalTransitionCost;
-			case "portal_transition_timeout_seconds" -> a.portalTransitionTimeoutSeconds;
-			case "portal_exit_timeout_seconds" -> a.portalExitTimeoutSeconds;
-			case "portal_exit_min_radius" -> a.portalExitMinRadius;
-			case "portal_exit_max_radius" -> a.portalExitMaxRadius;
-			case "portal_exit_vertical_radius" -> a.portalExitVerticalRadius;
-			case "repair_experience_stable_seconds" -> a.repairExperienceStableSeconds;
-			case "supply_interaction_timeout_seconds" -> a.supplyInteractionTimeoutSeconds;
-			case "furnace_interaction_timeout_seconds" -> a.furnaceInteractionTimeoutSeconds;
-			case "flight_retry_count" -> a.flightRetryCount;
-			default -> throw new IllegalArgumentException("Unknown advanced configuration key: " + key + ".");
-		};
 	}
 
 	private int showConfig(CommandContext<FabricClientCommandSource> context) {
@@ -980,42 +898,14 @@ public final class PerimeterCommand {
 		return Component.literal(value).withStyle(ChatFormatting.AQUA);
 	}
 
-	private static MutableComponent advancedLine(String name, Object... entries) {
+	private static MutableComponent advancedLine(String name, AdvancedConfig config, List<AdvancedOption> options) {
 		MutableComponent result = category(name).append(Component.literal(": ").withStyle(ChatFormatting.GRAY));
-		for (int index = 0; index < entries.length; index += 2) {
+		for (int index = 0; index < options.size(); index++) {
 			if (index > 0) result.append(separator());
-			result.append(field(entries[index].toString(), entries[index + 1]));
+			AdvancedOption option = options.get(index);
+			result.append(field(option.label(), option.get(config)));
 		}
 		return result.append(Component.literal(".").withStyle(ChatFormatting.GRAY));
-	}
-
-	private static int nonNegativeInteger(String key, double value) {
-		return rangedInteger(key, value, 0, Integer.MAX_VALUE);
-	}
-
-	private static int positiveInteger(String key, double value) {
-		return rangedInteger(key, value, 1, Integer.MAX_VALUE);
-	}
-
-	private static int rangedInteger(String key, double value, int minimum, int maximum) {
-		if (!Double.isFinite(value) || value != Math.rint(value) || value < minimum || value > maximum) {
-			throw new IllegalArgumentException(key + " must be an integer from " + minimum + " to " + maximum + ".");
-		}
-		return (int) value;
-	}
-
-	private static double positive(String key, double value) {
-		if (!Double.isFinite(value) || value <= 0.0) {
-			throw new IllegalArgumentException(key + " must be a positive finite number.");
-		}
-		return value;
-	}
-
-	private static double ranged(String key, double value, double minimum, double maximum) {
-		if (!Double.isFinite(value) || value < minimum || value > maximum) {
-			throw new IllegalArgumentException(key + " must be from " + minimum + " to " + maximum + ".");
-		}
-		return value;
 	}
 
 	private static MutableComponent field(String name, Object value) {
