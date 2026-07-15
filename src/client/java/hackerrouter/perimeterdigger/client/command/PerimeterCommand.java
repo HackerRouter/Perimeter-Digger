@@ -1,7 +1,6 @@
 package hackerrouter.perimeterdigger.client.command;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
@@ -12,10 +11,6 @@ import com.mojang.brigadier.suggestion.SuggestionProvider;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import hackerrouter.perimeterdigger.client.config.DetectedAreaConfig;
-import hackerrouter.perimeterdigger.client.config.FunctionConfig;
-import hackerrouter.perimeterdigger.client.config.AdvancedConfig;
-import hackerrouter.perimeterdigger.client.config.AdvancedOption;
-import hackerrouter.perimeterdigger.client.config.AdvancedOptions;
 import hackerrouter.perimeterdigger.client.config.PerimeterConfig;
 import hackerrouter.perimeterdigger.client.config.PositionConfig;
 import hackerrouter.perimeterdigger.client.config.ScanlineConfig;
@@ -29,16 +24,13 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
@@ -48,15 +40,6 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 public final class PerimeterCommand {
-	private static final List<String> FUNCTION_KEYS = List.of(
-			"collect_drops",
-			"unload",
-			"eat",
-			"durability_recovery",
-			"resupply",
-			"elytra_navigation",
-			"sleep"
-	);
 	private static final List<String> POINT_KEYS = List.of(
 			"consumable_supply_point",
 			"durability_supply_point",
@@ -95,35 +78,10 @@ public final class PerimeterCommand {
 		root.then(buildDetect());
 		root.then(buildPlan());
 		root.then(buildConfig());
-		root.then(buildAdvancedConfig());
-		root.then(buildFunction());
+		root.then(new AdvancedConfigCommand(configs, controller).build());
+		root.then(new FunctionCommand(configs, controller).build());
 		root.then(buildDebug());
 		return root;
-	}
-
-	private LiteralArgumentBuilder<FabricClientCommandSource> buildAdvancedConfig() {
-		return literal("config_advanced")
-				.executes(this::showAdvancedConfig)
-				.then(literal("show").executes(this::showAdvancedConfig))
-				.then(literal("set")
-						.then(argument("advancedKey", StringArgumentType.word())
-								.suggests((context, builder) -> SharedSuggestionProvider.suggest(AdvancedOptions.keys(), builder))
-								.then(argument("advancedValue", DoubleArgumentType.doubleArg(0.0))
-										.suggests(this::suggestAdvancedValue)
-										.executes(this::setAdvancedConfig))));
-	}
-
-	private LiteralArgumentBuilder<FabricClientCommandSource> buildFunction() {
-		return literal("function")
-				.executes(this::showFunctions)
-				.then(literal("enable")
-						.then(argument("functionName", StringArgumentType.word())
-								.suggests((context, builder) -> SharedSuggestionProvider.suggest(FUNCTION_KEYS, builder))
-								.executes(context -> setFunction(context, true))))
-				.then(literal("disable")
-						.then(argument("functionName", StringArgumentType.word())
-								.suggests((context, builder) -> SharedSuggestionProvider.suggest(FUNCTION_KEYS, builder))
-								.executes(context -> setFunction(context, false))));
 	}
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildDebug() {
@@ -642,98 +600,6 @@ public final class PerimeterCommand {
 		}
 	}
 
-	private int setFunction(CommandContext<FabricClientCommandSource> context, boolean enabled) {
-		try {
-			String name = StringArgumentType.getString(context, "functionName");
-			PerimeterConfig config = configs.get();
-			FunctionConfig functions = config.functions;
-			switch (name) {
-				case "collect_drops" -> functions.collectDrops = enabled;
-				case "unload" -> functions.unload = enabled;
-				case "eat" -> functions.eat = enabled;
-				case "durability_recovery" -> functions.durabilityRecovery = enabled;
-				case "resupply" -> functions.resupply = enabled;
-				case "elytra_navigation" -> functions.elytraNavigation = enabled;
-				case "sleep" -> functions.sleep = enabled;
-				default -> throw new IllegalArgumentException("Unknown function: " + name + ".");
-			}
-			configs.save();
-			controller.updateFunctions(functions);
-			feedback(context, category("Function")
-					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(Component.literal(name).withStyle(ChatFormatting.YELLOW))
-					.append(Component.literal("=").withStyle(ChatFormatting.GRAY))
-					.append(valueComponent(enabled))
-					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
-			return 1;
-		} catch (RuntimeException exception) {
-			return error(context, exception.getMessage());
-		}
-	}
-
-	private int showFunctions(CommandContext<FabricClientCommandSource> context) {
-		try {
-			FunctionConfig functions = configs.get().functions;
-			feedback(context, category("Functions")
-					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("collect drops", functions.collectDrops)).append(separator())
-					.append(field("unload", functions.unload)).append(separator())
-					.append(field("eat", functions.eat)).append(separator())
-					.append(field("durability recovery", functions.durabilityRecovery)).append(separator())
-					.append(field("resupply", functions.resupply)).append(separator())
-					.append(field("elytra navigation", functions.elytraNavigation)).append(separator())
-					.append(field("sleep", functions.sleep))
-					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
-			return 1;
-		} catch (RuntimeException exception) {
-			return error(context, exception.getMessage());
-		}
-	}
-
-	private int setAdvancedConfig(CommandContext<FabricClientCommandSource> context) {
-		try {
-			String key = StringArgumentType.getString(context, "advancedKey");
-			double value = DoubleArgumentType.getDouble(context, "advancedValue");
-			AdvancedConfig advanced = configs.get().advanced;
-			AdvancedOption option = AdvancedOptions.get(key);
-			option.set(advanced, value);
-			configs.save();
-			controller.updateAdvanced(advanced);
-			feedback(context, category("Advanced configuration")
-					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field(key, option.get(advanced)))
-					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
-			return 1;
-		} catch (RuntimeException exception) {
-			return error(context, exception.getMessage());
-		}
-	}
-
-	private int showAdvancedConfig(CommandContext<FabricClientCommandSource> context) {
-		try {
-			AdvancedConfig a = configs.get().advanced;
-			Map<String, List<AdvancedOption>> groups = new LinkedHashMap<>();
-			for (AdvancedOption option : AdvancedOptions.all()) {
-				groups.computeIfAbsent(option.group(), ignored -> new java.util.ArrayList<>()).add(option);
-			}
-			for (Map.Entry<String, List<AdvancedOption>> group : groups.entrySet()) {
-				feedback(context, advancedLine(group.getKey(), a, group.getValue()));
-			}
-			return 1;
-		} catch (RuntimeException exception) {
-			return error(context, exception.getMessage());
-		}
-	}
-
-	private CompletableFuture<Suggestions> suggestAdvancedValue(CommandContext<FabricClientCommandSource> context, SuggestionsBuilder builder) {
-		try {
-			String key = StringArgumentType.getString(context, "advancedKey");
-			return SharedSuggestionProvider.suggest(new String[]{AdvancedOptions.get(key).get(configs.get().advanced).toString()}, builder);
-		} catch (RuntimeException exception) {
-			return builder.buildFuture();
-		}
-	}
-
 	private int showConfig(CommandContext<FabricClientCommandSource> context) {
 		try {
 			PerimeterConfig config = configs.get();
@@ -895,44 +761,19 @@ public final class PerimeterCommand {
 	}
 
 	private static MutableComponent category(String value) {
-		return Component.literal(value).withStyle(ChatFormatting.AQUA);
-	}
-
-	private static MutableComponent advancedLine(String name, AdvancedConfig config, List<AdvancedOption> options) {
-		MutableComponent result = category(name).append(Component.literal(": ").withStyle(ChatFormatting.GRAY));
-		for (int index = 0; index < options.size(); index++) {
-			if (index > 0) result.append(separator());
-			AdvancedOption option = options.get(index);
-			result.append(field(option.label(), option.get(config)));
-		}
-		return result.append(Component.literal(".").withStyle(ChatFormatting.GRAY));
+		return CommandOutput.category(value);
 	}
 
 	private static MutableComponent field(String name, Object value) {
-		return field(name, valueComponent(value));
+		return CommandOutput.field(name, value);
 	}
 
 	private static MutableComponent field(String name, MutableComponent value) {
-		return Component.literal(name).withStyle(ChatFormatting.YELLOW)
-				.append(Component.literal("=").withStyle(ChatFormatting.GRAY))
-				.append(value);
+		return CommandOutput.field(name, value);
 	}
 
 	private static MutableComponent valueComponent(Object value) {
-		if (value == null) return clickableValue("unset", ChatFormatting.RED);
-		if (value instanceof Boolean flag) {
-			return clickableValue(Boolean.toString(flag), flag ? ChatFormatting.GREEN : ChatFormatting.RED);
-		}
-		String text = value.toString();
-		if (text.equalsIgnoreCase("unset") || text.equalsIgnoreCase("none") || text.equalsIgnoreCase("false")) {
-			return clickableValue(text, ChatFormatting.RED);
-		}
-		return clickableValue(text, ChatFormatting.GREEN);
-	}
-
-	private static MutableComponent clickableValue(String value, ChatFormatting color) {
-		return Component.literal(value).withStyle(color)
-				.withStyle(style -> style.withClickEvent(new ClickEvent.CopyToClipboard(value)));
+		return CommandOutput.valueComponent(value);
 	}
 
 	private static MutableComponent listValue(List<String> values) {
@@ -952,7 +793,7 @@ public final class PerimeterCommand {
 	}
 
 	private static MutableComponent separator() {
-		return Component.literal(", ").withStyle(ChatFormatting.GRAY);
+		return CommandOutput.separator();
 	}
 
 	private static void feedback(CommandContext<FabricClientCommandSource> context, String message) {
@@ -960,11 +801,10 @@ public final class PerimeterCommand {
 	}
 
 	private static void feedback(CommandContext<FabricClientCommandSource> context, Component message) {
-		context.getSource().sendFeedback(message);
+		CommandOutput.feedback(context, message);
 	}
 
 	private static int error(CommandContext<FabricClientCommandSource> context, String message) {
-		context.getSource().sendFeedback(Component.literal("Error: " + (message == null ? "Unknown error." : message)));
-		return 0;
+		return CommandOutput.error(context, message);
 	}
 }

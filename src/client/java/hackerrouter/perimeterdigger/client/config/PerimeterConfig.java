@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 public final class PerimeterConfig {
-	public int schemaVersion = 1;
+	public int schemaVersion = ConfigMigration.CURRENT_SCHEMA_VERSION;
 	public Integer diggingMinY;
 	public Integer diggingMaxY;
 	public PositionConfig consumableSupplyPoint;
@@ -29,6 +29,7 @@ public final class PerimeterConfig {
 	public AdvancedConfig advanced = new AdvancedConfig();
 
 	public void normalize() {
+		schemaVersion = ConfigMigration.CURRENT_SCHEMA_VERSION;
 		if (unloadingPoints == null) {
 			unloadingPoints = new LinkedHashMap<>();
 		}

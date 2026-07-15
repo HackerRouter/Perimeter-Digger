@@ -25,6 +25,20 @@ dependencies {
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 	implementation files("../baritone/fabric/build/libs/baritone-fabric-1.11.1-17-gb8e1048f-dirty.jar")
+	testImplementation "org.junit.jupiter:junit-jupiter:5.14.1"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+sourceSets {
+	test {
+		compileClasspath += sourceSets.client.output + sourceSets.client.compileClasspath
+		runtimeClasspath += sourceSets.client.output + sourceSets.client.runtimeClasspath
+	}
+}
+
+tasks.named("test", Test) {
+	dependsOn tasks.named("compileClientJava")
+	useJUnitPlatform()
 }
 
 processResources {

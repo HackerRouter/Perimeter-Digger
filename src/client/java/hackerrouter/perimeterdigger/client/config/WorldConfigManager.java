@@ -2,6 +2,8 @@ package hackerrouter.perimeterdigger.client.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ServerData;
@@ -41,6 +43,10 @@ public final class WorldConfigManager {
 
 	public void save() {
 		ensureLoaded();
+		writeConfig();
+	}
+
+	private void writeConfig() {
 		try {
 			Files.createDirectories(path.getParent());
 			Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
@@ -68,13 +74,18 @@ public final class WorldConfigManager {
 			return;
 		}
 		try {
-			config = GSON.fromJson(Files.readString(path, StandardCharsets.UTF_8), PerimeterConfig.class);
+			JsonObject source = JsonParser.parseString(Files.readString(path, StandardCharsets.UTF_8)).getAsJsonObject();
+			ConfigMigration.Result migration = ConfigMigration.migrate(source);
+			config = GSON.fromJson(migration.config(), PerimeterConfig.class);
 			if (config == null) {
 				config = new PerimeterConfig();
 			}
 			config.normalize();
+			if (migration.changed()) writeConfig();
 		} catch (IOException exception) {
 			throw new IllegalStateException("Failed to load world configuration: " + exception.getMessage(), exception);
+		} catch (RuntimeException exception) {
+			throw new IllegalStateException("Failed to parse or migrate world configuration: " + exception.getMessage(), exception);
 		}
 	}
 
