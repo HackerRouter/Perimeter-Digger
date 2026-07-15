@@ -24,6 +24,8 @@ public final class PerimeterConfig {
 	public List<String> foods = new ArrayList<>(List.of("minecraft:enchanted_golden_apple"));
 	public List<String> unloadingWhitelist = new ArrayList<>();
 	public DetectedAreaConfig detectedArea;
+	public FunctionConfig functions = new FunctionConfig();
+	public AdvancedConfig advanced = new AdvancedConfig();
 
 	public void normalize() {
 		if (unloadingPoints == null) {
@@ -46,6 +48,12 @@ public final class PerimeterConfig {
 		}
 		if (unloadingWhitelist == null) {
 			unloadingWhitelist = new ArrayList<>();
+		}
+		if (functions == null) {
+			functions = new FunctionConfig();
+		}
+		if (advanced == null) {
+			advanced = new AdvancedConfig();
 		}
 	}
 }

@@ -15,6 +15,8 @@ import baritone.api.utils.BetterBlockPos;
 import baritone.api.utils.RotationUtils;
 import baritone.api.utils.input.Input;
 import hackerrouter.perimeterdigger.client.config.PerimeterConfig;
+import hackerrouter.perimeterdigger.client.config.FunctionConfig;
+import hackerrouter.perimeterdigger.client.config.AdvancedConfig;
 import hackerrouter.perimeterdigger.client.config.PositionConfig;
 import hackerrouter.perimeterdigger.client.config.UnloadingPointConfig;
 import net.minecraft.client.Minecraft;
@@ -56,21 +58,7 @@ import java.util.Set;
 
 public final class AutomationController {
 	private static final int MONITOR_INTERVAL_TICKS = 10;
-	private static final int TOOL_DURABILITY_THRESHOLD = 32;
-	private static final int ELYTRA_DURABILITY_THRESHOLD = 32;
-	private static final int DURABILITY_SUPPLY_FLIGHT_THRESHOLD = 5;
-	private static final int DROP_COLLECTION_RADIUS = 8;
-	private static final int FOOD_LEVEL_THRESHOLD = 14;
-	private static final int FOOD_RESUPPLY_TRIGGER = 1;
-	private static final int FOOD_RESUPPLY_TARGET = 64;
-	private static final int FIREWORK_RESUPPLY_TRIGGER = 10;
-	private static final int FIREWORK_RESUPPLY_TARGET = 128;
-	private static final int DROP_STABLE_SCAN_LIMIT = 3;
-	private static final int REPAIR_EXPERIENCE_STABLE_TICKS = 30;
 	private static final double FURNACE_INTERACTION_DISTANCE_SQUARED = 20.25;
-	private static final int UNLOAD_LANDING_SEARCH_RADIUS = 16;
-	private static final int UNLOAD_WALK_DISTANCE = 32;
-	private static final double PORTAL_TRANSITION_DISTANCE_COST = 16.0;
 	private static final int OFFHAND_INVENTORY_SLOT = 40;
 	private static final int OFFHAND_MENU_SLOT = 45;
 	private static final int CHEST_MENU_SLOT = 6;
@@ -157,6 +145,13 @@ public final class AutomationController {
 	private int lastInventoryItemCount;
 	private boolean miningCompletePending;
 	private boolean debugUnloadOnly;
+	private boolean collectDropsEnabled = true;
+	private boolean unloadEnabled = true;
+	private boolean eatEnabled = true;
+	private boolean durabilityRecoveryEnabled = true;
+	private boolean resupplyEnabled = true;
+	private boolean elytraNavigationEnabled = true;
+	private AdvancedConfig advanced = new AdvancedConfig();
 
 	public List<String> start(PerimeterConfig config) {
 		transition(AutomationState.VALIDATING, "Validating mining configuration");
@@ -177,6 +172,8 @@ public final class AutomationController {
 		this.unloadingWhitelist = items(config.unloadingWhitelist);
 		this.consumableSupplyPoint = config.consumableSupplyPoint;
 		this.durabilitySupplyPoint = config.durabilitySupplyPoint;
+		updateFunctions(config.functions);
+		updateAdvanced(config.advanced);
 		loadRepairConfiguration(config);
 		this.unloadingPoints = config.unloadingPoints.entrySet().stream()
 				.map(entry -> new NamedUnloadingPoint(entry.getKey(), entry.getValue()))
@@ -188,9 +185,9 @@ public final class AutomationController {
 		this.stableInventoryScans = 0;
 		this.inventoryClicks.clear();
 		BaritoneAPI.getSettings().itemSaver.value = true;
-		BaritoneAPI.getSettings().itemSaverThreshold.value = TOOL_DURABILITY_THRESHOLD;
+		BaritoneAPI.getSettings().itemSaverThreshold.value = advanced.toolDurabilityThreshold;
 		BaritoneAPI.getSettings().elytraAutoSwap.value = true;
-		BaritoneAPI.getSettings().elytraMinimumDurability.value = ELYTRA_DURABILITY_THRESHOLD;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.elytraDurabilityThreshold;
 		BaritoneAPI.getSettings().elytraAutoJump.value = true;
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
@@ -216,8 +213,10 @@ public final class AutomationController {
 		this.inventoryClicks.clear();
 		this.miningCompletePending = false;
 		this.debugUnloadOnly = true;
+		updateFunctions(config.functions);
+		updateAdvanced(config.advanced);
 		BaritoneAPI.getSettings().elytraAutoSwap.value = true;
-		BaritoneAPI.getSettings().elytraMinimumDurability.value = ELYTRA_DURABILITY_THRESHOLD;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.elytraDurabilityThreshold;
 		BaritoneAPI.getSettings().elytraAutoJump.value = true;
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
@@ -241,10 +240,12 @@ public final class AutomationController {
 		this.allowedFoods = foods(config.foods);
 		this.consumableSupplyPoint = config.consumableSupplyPoint;
 		this.durabilitySupplyPoint = config.durabilitySupplyPoint;
+		updateFunctions(config.functions);
+		updateAdvanced(config.advanced);
 		this.inventoryClicks.clear();
 		this.debugStage6Only = true;
 		BaritoneAPI.getSettings().elytraAutoSwap.value = true;
-		BaritoneAPI.getSettings().elytraMinimumDurability.value = ELYTRA_DURABILITY_THRESHOLD;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.elytraDurabilityThreshold;
 		BaritoneAPI.getSettings().elytraAutoJump.value = true;
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
@@ -267,9 +268,11 @@ public final class AutomationController {
 		bindBaritone();
 		loadRepairConfiguration(config);
 		this.allowedFoods = foods(config.foods);
+		updateFunctions(config.functions);
+		updateAdvanced(config.advanced);
 		this.debugStage7Only = true;
 		BaritoneAPI.getSettings().elytraAutoSwap.value = true;
-		BaritoneAPI.getSettings().elytraMinimumDurability.value = ELYTRA_DURABILITY_THRESHOLD;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.elytraDurabilityThreshold;
 		BaritoneAPI.getSettings().elytraAutoJump.value = true;
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
@@ -307,8 +310,8 @@ public final class AutomationController {
 		}
 		if (++tickCounter % MONITOR_INTERVAL_TICKS != 0) return;
 		if (watchdogNavigationTarget() != null && !baritone.getPlayerContext().player().isFallFlying() && !isInsideNetherPortal()
-				&& baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= FOOD_LEVEL_THRESHOLD
-				&& beginEating()) return;
+				&& baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= advanced.foodLevelThreshold
+				&& eatEnabled && beginEating()) return;
 		if (tickNavigationWatchdog()) return;
 		if (state == AutomationState.NAVIGATING_TO_UNLOAD) {
 			tickNavigateToUnload();
@@ -339,21 +342,22 @@ public final class AutomationController {
 				) return;
 		if (!inventoryClicks.isEmpty()) return;
 		ResourceCheck resources = inspectResources();
-		if (baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= FOOD_LEVEL_THRESHOLD && beginEating()) return;
+		if (eatEnabled && baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= advanced.foodLevelThreshold && beginEating()) return;
 		if (resources.replacement() != null) {
 			performReplacement(resources.replacement());
 			return;
 		}
-		if ((state == AutomationState.MINING || state == AutomationState.COLLECTING_DROPS) && emptyInventorySlots() == 0) {
+		if (unloadEnabled && (state == AutomationState.MINING || state == AutomationState.COLLECTING_DROPS) && emptyInventorySlots() == 0) {
 			requestUnload();
 			return;
 		}
-		if (consumableSupplyPoint != null
-				&& (configuredFoodCount() <= FOOD_RESUPPLY_TRIGGER || fireworkCount() <= FIREWORK_RESUPPLY_TRIGGER)) {
+		if (resupplyEnabled && consumableSupplyPoint != null
+				&& (configuredFoodCount() <= advanced.foodResupplyTrigger
+				|| elytraNavigationEnabled && fireworkCount() <= advanced.fireworkResupplyTrigger)) {
 			beginSupply(SupplyKind.CONSUMABLES, false);
 			return;
 		}
-		if (resources.repairRequired()) {
+		if (durabilityRecoveryEnabled && resources.repairRequired()) {
 			if (durabilityRecoveryMode.equals("supply_point") && durabilitySupplyPoint != null) {
 				beginSupply(SupplyKind.DURABILITY, false);
 				return;
@@ -362,8 +366,8 @@ public final class AutomationController {
 				return;
 			}
 		}
-		if (consumableSupplyPoint != null
-				&& baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= FOOD_LEVEL_THRESHOLD) {
+		if (resupplyEnabled && consumableSupplyPoint != null
+				&& baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= advanced.foodLevelThreshold) {
 			beginSupply(SupplyKind.CONSUMABLES, false);
 			return;
 		}
@@ -411,6 +415,24 @@ public final class AutomationController {
 		miningCompletePending = false;
 		tickCounter = 0;
 		transition(AutomationState.IDLE, "Cached automation state cleared");
+	}
+
+	public void updateFunctions(FunctionConfig functions) {
+		FunctionConfig value = functions == null ? new FunctionConfig() : functions;
+		collectDropsEnabled = value.collectDrops;
+		unloadEnabled = value.unload;
+		eatEnabled = value.eat;
+		durabilityRecoveryEnabled = value.durabilityRecovery;
+		resupplyEnabled = value.resupply;
+		elytraNavigationEnabled = value.elytraNavigation;
+	}
+
+	public void updateAdvanced(AdvancedConfig advanced) {
+		this.advanced = advanced == null ? new AdvancedConfig() : advanced;
+		if (baritone != null) {
+			BaritoneAPI.getSettings().itemSaverThreshold.value = this.advanced.toolDurabilityThreshold;
+			BaritoneAPI.getSettings().elytraMinimumDurability.value = this.advanced.elytraDurabilityThreshold;
+		}
 	}
 
 	public void pause() {
@@ -483,11 +505,13 @@ public final class AutomationController {
 
 	private void startMiningCycle() {
 		int emptySlots = emptyInventorySlots();
-		if (emptySlots == 0) {
+		if (emptySlots == 0 && unloadEnabled) {
 			requestUnload();
 			return;
 		}
-		long blockLimit = emptySlots == 1 ? 1L : (long) (emptySlots - 1) * 64L;
+		long blockLimit = !collectDropsEnabled || emptySlots == 0
+				? Long.MAX_VALUE
+				: Math.max(1L, (long) Math.max(0, emptySlots - advanced.inventoryReservedSlots) * advanced.miningBlocksPerEmptySlot);
 		customGoalProcess.onLostControl();
 		miningProcess.mineArea(area, new AreaMiningOptions(liquidPolicy, sealingBlocks, blockLimit));
 		transition(AutomationState.MINING, "Mining cycle started. Block limit: " + blockLimit + ". Empty slots: " + emptySlots + ".");
@@ -496,16 +520,31 @@ public final class AutomationController {
 	private void beginDropCollection(boolean miningComplete) {
 		miningCompletePending = miningComplete;
 		miningProcess.cancel();
+		if (!collectDropsEnabled) {
+			customGoalProcess.onLostControl();
+			if (miningComplete) {
+				if (unloadEnabled) requestUnload();
+				else transition(AutomationState.COMPLETE, "Mining complete. Drop collection and unloading are disabled.");
+			} else {
+				startMiningCycle();
+			}
+			return;
+		}
 		disablePlacementForNavigation();
 		stableInventoryScans = 0;
 		lastInventoryItemCount = inventoryItemCount();
-		transition(AutomationState.COLLECTING_DROPS, "Collecting drops within an 8-block horizontal radius.");
+		transition(AutomationState.COLLECTING_DROPS, "Collecting drops within a " + advanced.dropCollectionRadius + "-block horizontal radius.");
 		tickDropCollection();
 	}
 
 	private void tickDropCollection() {
 		if (emptyInventorySlots() == 0) {
-			requestUnload();
+			if (unloadEnabled) requestUnload();
+			else {
+				restoreAllowPlace();
+				if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining and drop collection complete. Unloading is disabled.");
+				else startMiningCycle();
+			}
 			return;
 		}
 		int itemCount = inventoryItemCount();
@@ -513,23 +552,28 @@ public final class AutomationController {
 		else stableInventoryScans++;
 		lastInventoryItemCount = itemCount;
 		List<Goal> goals = nearbyDropGoals();
-		if (stableInventoryScans >= DROP_STABLE_SCAN_LIMIT) {
+		if (stableInventoryScans >= dropStableScanLimit()) {
 			customGoalProcess.onLostControl();
-			requestUnload();
+			if (unloadEnabled) requestUnload();
+			else {
+				restoreAllowPlace();
+				if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining and drop collection complete. Unloading is disabled.");
+				else startMiningCycle();
+			}
 			return;
 		}
 		if (goals.isEmpty()) {
 			customGoalProcess.onLostControl();
-			synchronize(AutomationState.COLLECTING_DROPS, "Waiting for inventory growth. Items: " + itemCount + ". Stable scans: " + stableInventoryScans + "/" + DROP_STABLE_SCAN_LIMIT + ".");
+			synchronize(AutomationState.COLLECTING_DROPS, "Waiting for inventory growth. Items: " + itemCount + ". Stable scans: " + stableInventoryScans + "/" + dropStableScanLimit() + ".");
 			return;
 		}
 		customGoalProcess.setGoalAndPath(new GoalComposite(goals.toArray(new Goal[0])));
-		synchronize(AutomationState.COLLECTING_DROPS, "Collecting " + goals.size() + " nearby drop targets. Items: " + itemCount + ". Stable scans: " + stableInventoryScans + "/" + DROP_STABLE_SCAN_LIMIT + ".");
+		synchronize(AutomationState.COLLECTING_DROPS, "Collecting " + goals.size() + " nearby drop targets. Items: " + itemCount + ". Stable scans: " + stableInventoryScans + "/" + dropStableScanLimit() + ".");
 	}
 
 	private List<Goal> nearbyDropGoals() {
 		List<Goal> goals = new ArrayList<>();
-		double radiusSquared = (double) DROP_COLLECTION_RADIUS * DROP_COLLECTION_RADIUS;
+		double radiusSquared = (double) advanced.dropCollectionRadius * advanced.dropCollectionRadius;
 		for (Entity entity : baritone.getPlayerContext().entities()) {
 			double dx = entity.getX() - baritone.getPlayerContext().player().getX();
 			double dz = entity.getZ() - baritone.getPlayerContext().player().getZ();
@@ -605,7 +649,7 @@ public final class AutomationController {
 		repairFlying = false;
 		repairFlightAttempts = 0;
 		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
-		if (player.distSqr(target) > (double) UNLOAD_WALK_DISTANCE * UNLOAD_WALK_DISTANCE && canFlyForRepair()) {
+		if (player.distSqr(target) > navigationFlightDistanceSquared() && canFlyForRepair()) {
 			startFlyingForRepair(navigationState);
 			return;
 		}
@@ -614,15 +658,15 @@ public final class AutomationController {
 
 	private boolean canFlyForRepair() {
 		ItemStack chest = baritone.getPlayerContext().player().getItemBySlot(EquipmentSlot.CHEST);
-		return elytraProcess.isLoaded() && chest.is(Items.ELYTRA)
-				&& remainingDurability(chest) > DURABILITY_SUPPLY_FLIGHT_THRESHOLD
+		return elytraNavigationEnabled && elytraProcess.isLoaded() && chest.is(Items.ELYTRA)
+				&& remainingDurability(chest) > advanced.emergencyFlightDurabilityThreshold
 				&& fireworkCount() > 0;
 	}
 
 	private void prepareRepairFlightSettings() {
 		if (savedElytraMinimumDurability == null) savedElytraMinimumDurability = BaritoneAPI.getSettings().elytraMinimumDurability.value;
 		if (savedElytraMinFireworksBeforeLanding == null) savedElytraMinFireworksBeforeLanding = BaritoneAPI.getSettings().elytraMinFireworksBeforeLanding.value;
-		BaritoneAPI.getSettings().elytraMinimumDurability.value = DURABILITY_SUPPLY_FLIGHT_THRESHOLD;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.emergencyFlightDurabilityThreshold;
 		BaritoneAPI.getSettings().elytraMinFireworksBeforeLanding.value = -1;
 	}
 
@@ -671,7 +715,7 @@ public final class AutomationController {
 		if (customGoalProcess.isActive()) return;
 		restoreAllowPlace();
 		if (repairNavigationTarget.getY() > baritone.getPlayerContext().playerFeet().y
-				&& repairFlightAttempts < 2 && canFlyForRepair()) {
+				&& repairFlightAttempts < advanced.flightRetryCount && canFlyForRepair()) {
 			startFlyingForRepair(state);
 			return;
 		}
@@ -697,7 +741,7 @@ public final class AutomationController {
 	}
 
 	private void tickEnteringRepairPortal() {
-		if (++portalWaitTicks > 400) {
+		if (++portalWaitTicks > ticks(advanced.portalTransitionTimeoutSeconds)) {
 			transition(AutomationState.ERROR, "Timed out while waiting for the stage 7 portal transition.");
 			return;
 		}
@@ -771,9 +815,9 @@ public final class AutomationController {
 			return;
 		}
 		if (customGoalProcess.isActive()) return;
-		if (++portalExitSearchScans > 40) {
+		if (++portalExitSearchScans > monitorScans(advanced.portalExitTimeoutSeconds)) {
 			restoreAllowPlace();
-			transition(AutomationState.ERROR, "No reachable safe portal exit position was found within 20 seconds.");
+			transition(AutomationState.ERROR, "No reachable safe portal exit position was found within " + advanced.portalExitTimeoutSeconds + " seconds.");
 			return;
 		}
 		portalExitOrigin = currentClientPlayerFeet();
@@ -793,11 +837,12 @@ public final class AutomationController {
 	private List<BlockPos> findPortalExitCandidates(BlockPos origin) {
 		List<BlockPos> candidates = new ArrayList<>();
 		BlockPos player = currentClientPlayerFeet();
-		for (int dx = -8; dx <= 8; dx++) {
-			for (int dz = -8; dz <= 8; dz++) {
+		for (int dx = -advanced.portalExitMaxRadius; dx <= advanced.portalExitMaxRadius; dx++) {
+			for (int dz = -advanced.portalExitMaxRadius; dz <= advanced.portalExitMaxRadius; dz++) {
 				int horizontalDistanceSquared = dx * dx + dz * dz;
-				if (horizontalDistanceSquared < 9 || horizontalDistanceSquared > 64) continue;
-				for (int dy = -4; dy <= 4; dy++) {
+				if (horizontalDistanceSquared < advanced.portalExitMinRadius * advanced.portalExitMinRadius
+						|| horizontalDistanceSquared > advanced.portalExitMaxRadius * advanced.portalExitMaxRadius) continue;
+				for (int dy = -advanced.portalExitVerticalRadius; dy <= advanced.portalExitVerticalRadius; dy++) {
 					BlockPos candidate = origin.offset(dx, dy, dz);
 					if (isPortalExitPosition(candidate)) candidates.add(candidate);
 				}
@@ -930,7 +975,7 @@ public final class AutomationController {
 		}
 		stopProcesses();
 		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
-		if (player.distSqr(activeSupplyStand) > (double) UNLOAD_WALK_DISTANCE * UNLOAD_WALK_DISTANCE && canFlyToSupply()) {
+		if (player.distSqr(activeSupplyStand) > navigationFlightDistanceSquared() && canFlyToSupply()) {
 			startFlyingToSupply();
 			return;
 		}
@@ -939,15 +984,15 @@ public final class AutomationController {
 
 	private boolean canFlyToDestination() {
 		ItemStack chest = baritone.getPlayerContext().player().getItemBySlot(EquipmentSlot.CHEST);
-		return elytraProcess.isLoaded() && chest.is(Items.ELYTRA)
-				&& remainingDurability(chest) > ELYTRA_DURABILITY_THRESHOLD
+		return elytraNavigationEnabled && elytraProcess.isLoaded() && chest.is(Items.ELYTRA)
+				&& remainingDurability(chest) > advanced.elytraDurabilityThreshold
 				&& fireworkCount() > BaritoneAPI.getSettings().elytraMinFireworksBeforeLanding.value;
 	}
 
 	private boolean canFlyToSupply() {
 		ItemStack chest = baritone.getPlayerContext().player().getItemBySlot(EquipmentSlot.CHEST);
-		return elytraProcess.isLoaded() && chest.is(Items.ELYTRA)
-				&& remainingDurability(chest) > DURABILITY_SUPPLY_FLIGHT_THRESHOLD
+		return elytraNavigationEnabled && elytraProcess.isLoaded() && chest.is(Items.ELYTRA)
+				&& remainingDurability(chest) > advanced.emergencyFlightDurabilityThreshold
 				&& fireworkCount() > 0;
 	}
 
@@ -994,7 +1039,7 @@ public final class AutomationController {
 		if (customGoalProcess.isActive()) return;
 		restoreAllowPlace();
 		if (activeSupplyStand.getY() > baritone.getPlayerContext().playerFeet().y
-				&& supplyFlightAttempts < 2 && canFlyToSupply()) {
+				&& supplyFlightAttempts < advanced.flightRetryCount && canFlyToSupply()) {
 			startFlyingToSupply();
 			return;
 		}
@@ -1010,7 +1055,7 @@ public final class AutomationController {
 		}
 		BaritoneAPI.getSettings().elytraMinFireworksBeforeLanding.value = -1;
 		if (savedElytraMinimumDurability == null) savedElytraMinimumDurability = BaritoneAPI.getSettings().elytraMinimumDurability.value;
-		BaritoneAPI.getSettings().elytraMinimumDurability.value = DURABILITY_SUPPLY_FLIGHT_THRESHOLD;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.emergencyFlightDurabilityThreshold;
 		supplyFlying = true;
 		supplyFlightAttempts++;
 		elytraProcess.pathTo(activeSupplyStand);
@@ -1097,7 +1142,7 @@ public final class AutomationController {
 			supplyPhase = SupplyPhase.TRANSFERRING;
 			return;
 		}
-		if (supplyInteractionTicks++ > 40) {
+		if (supplyInteractionTicks++ > ticks(advanced.supplyInteractionTimeoutSeconds)) {
 			transition(AutomationState.ERROR, "Timed out while opening the " + supplyKind.displayName + " supply chest.");
 			return;
 		}
@@ -1122,11 +1167,11 @@ public final class AutomationController {
 	}
 
 	private void transferConsumables() {
-		if (configuredFoodCount() < FOOD_RESUPPLY_TARGET) {
-			if (!queueConsumableTransfer(allowedFoods, FOOD_RESUPPLY_TARGET - configuredFoodCount(), "configured food")) return;
+		if (configuredFoodCount() < advanced.foodResupplyTarget) {
+			if (!queueConsumableTransfer(allowedFoods, advanced.foodResupplyTarget - configuredFoodCount(), "configured food")) return;
 		}
-		if (fireworkCount() < FIREWORK_RESUPPLY_TARGET) {
-			if (!queueConsumableTransfer(Set.of(Items.FIREWORK_ROCKET), FIREWORK_RESUPPLY_TARGET - fireworkCount(), "firework rockets")) return;
+		if (fireworkCount() < advanced.fireworkResupplyTarget) {
+			if (!queueConsumableTransfer(Set.of(Items.FIREWORK_ROCKET), advanced.fireworkResupplyTarget - fireworkCount(), "firework rockets")) return;
 		}
 		finishSupplyTransfer();
 	}
@@ -1303,7 +1348,7 @@ public final class AutomationController {
 			baritone.getPlayerContext().player().closeContainer();
 			return;
 		}
-		if (repairInteractionTicks++ > 40) {
+		if (repairInteractionTicks++ > ticks(advanced.furnaceInteractionTimeoutSeconds)) {
 			transition(AutomationState.ERROR, "Timed out while opening furnace " + (repairFurnaceIndex + 1) + ".");
 			return;
 		}
@@ -1355,7 +1400,7 @@ public final class AutomationController {
 			repairStableTicks = 0;
 			return;
 		}
-		if (++repairStableTicks < REPAIR_EXPERIENCE_STABLE_TICKS) return;
+		if (++repairStableTicks < ticks(advanced.repairExperienceStableSeconds)) return;
 		if (!(baritone.getPlayerContext().player().containerMenu instanceof InventoryMenu)) {
 			baritone.getPlayerContext().player().closeContainer();
 		}
@@ -1438,7 +1483,7 @@ public final class AutomationController {
 			repairStage = RepairStage.RETURN_TO_MACHINE_TAKEOFF;
 			repairNavigationTarget = repairMachineTakeoffPoint;
 			repairFlying = false;
-			repairFlightAttempts = 2;
+			repairFlightAttempts = advanced.flightRetryCount;
 			startWalkingForRepair(AutomationState.NAVIGATING_TO_REPAIR_MACHINE);
 			return;
 		}
@@ -1597,6 +1642,13 @@ public final class AutomationController {
 	}
 
 	private void requestUnload() {
+		if (!debugUnloadOnly && !unloadEnabled) {
+			customGoalProcess.onLostControl();
+			restoreAllowPlace();
+			if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining complete. Unloading is disabled.");
+			else startMiningCycle();
+			return;
+		}
 		if (!debugUnloadOnly) {
 			miningReturnPoint = baritone.getPlayerContext().playerFeet();
 			miningReturnDimension = baritone.getPlayerContext().world().dimension();
@@ -1617,7 +1669,7 @@ public final class AutomationController {
 				? new BlockPos(unloadingPoint.point().x, player.y, unloadingPoint.point().z)
 				: preferred.position();
 		unloadFlightAttempts = 0;
-		if (player.distSqr(flightTarget) <= (double) UNLOAD_WALK_DISTANCE * UNLOAD_WALK_DISTANCE || !canFlyToDestination()) {
+		if (player.distSqr(flightTarget) <= navigationFlightDistanceSquared() || !canFlyToDestination()) {
 			beginUnloadApproach();
 			return;
 		}
@@ -1663,7 +1715,7 @@ public final class AutomationController {
 		}
 		if (customGoalProcess.isActive()) return;
 		if (candidate.position().getY() > baritone.getPlayerContext().playerFeet().y
-				&& unloadFlightAttempts < 2 && canFlyToDestination()) {
+				&& unloadFlightAttempts < advanced.flightRetryCount && canFlyToDestination()) {
 			startFlyingToUnload(candidate.position());
 			return;
 		}
@@ -1740,7 +1792,7 @@ public final class AutomationController {
 		activeReturnTarget = positionForReturnWaypoint(activeReturnWaypoint);
 		returnFlightAttempts = 0;
 		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
-		if (player.distSqr(activeReturnTarget) > (double) UNLOAD_WALK_DISTANCE * UNLOAD_WALK_DISTANCE && canFlyForReturn()) {
+		if (player.distSqr(activeReturnTarget) > navigationFlightDistanceSquared() && canFlyForReturn()) {
 			startFlyingBackToMine();
 			return;
 		}
@@ -1758,37 +1810,37 @@ public final class AutomationController {
 			if (miningReturnDimension.equals(Level.OVERWORLD)) {
 				if (currentDimension.equals(Level.OVERWORLD)) {
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.REPAIR_OVERWORLD,
-							distance(current, position(repairPortalOverworld)) + PORTAL_TRANSITION_DISTANCE_COST
-									+ distance(position(repairPortalNether), position(perimeterPortalNether)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(repairPortalOverworld)) + advanced.portalTransitionCost
+								+ distance(position(repairPortalNether), position(perimeterPortalNether)) + advanced.portalTransitionCost
 									+ distance(position(perimeterPortalOverworld), miningReturnPoint)));
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.PERIMETER_OVERWORLD,
-							distance(current, position(perimeterPortalOverworld)) + PORTAL_TRANSITION_DISTANCE_COST
-									+ distance(position(perimeterPortalNether), position(repairPortalNether)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(perimeterPortalOverworld)) + advanced.portalTransitionCost
+								+ distance(position(perimeterPortalNether), position(repairPortalNether)) + advanced.portalTransitionCost
 									+ distance(position(repairPortalOverworld), miningReturnPoint)));
 				} else if (currentDimension.equals(Level.NETHER)) {
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.REPAIR_NETHER,
-							distance(current, position(repairPortalNether)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(repairPortalNether)) + advanced.portalTransitionCost
 									+ distance(position(repairPortalOverworld), miningReturnPoint)));
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.PERIMETER_NETHER,
-							distance(current, position(perimeterPortalNether)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(perimeterPortalNether)) + advanced.portalTransitionCost
 									+ distance(position(perimeterPortalOverworld), miningReturnPoint)));
 				}
 			} else if (miningReturnDimension.equals(Level.NETHER)) {
 				if (currentDimension.equals(Level.NETHER)) {
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.REPAIR_NETHER,
-							distance(current, position(repairPortalNether)) + PORTAL_TRANSITION_DISTANCE_COST
-									+ distance(position(repairPortalOverworld), position(perimeterPortalOverworld)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(repairPortalNether)) + advanced.portalTransitionCost
+								+ distance(position(repairPortalOverworld), position(perimeterPortalOverworld)) + advanced.portalTransitionCost
 									+ distance(position(perimeterPortalNether), miningReturnPoint)));
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.PERIMETER_NETHER,
-							distance(current, position(perimeterPortalNether)) + PORTAL_TRANSITION_DISTANCE_COST
-									+ distance(position(perimeterPortalOverworld), position(repairPortalOverworld)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(perimeterPortalNether)) + advanced.portalTransitionCost
+								+ distance(position(perimeterPortalOverworld), position(repairPortalOverworld)) + advanced.portalTransitionCost
 									+ distance(position(repairPortalNether), miningReturnPoint)));
 				} else if (currentDimension.equals(Level.OVERWORLD)) {
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.REPAIR_OVERWORLD,
-							distance(current, position(repairPortalOverworld)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(repairPortalOverworld)) + advanced.portalTransitionCost
 									+ distance(position(repairPortalNether), miningReturnPoint)));
 					candidates.add(new ReturnRouteCandidate(ReturnWaypoint.PERIMETER_OVERWORLD,
-							distance(current, position(perimeterPortalOverworld)) + PORTAL_TRANSITION_DISTANCE_COST
+						distance(current, position(perimeterPortalOverworld)) + advanced.portalTransitionCost
 									+ distance(position(perimeterPortalNether), miningReturnPoint)));
 				}
 			}
@@ -1856,7 +1908,7 @@ public final class AutomationController {
 			return;
 		}
 		if (customGoalProcess.isActive()) return;
-		if (returnFlightAttempts < 2 && canFlyForReturn()) {
+		if (returnFlightAttempts < advanced.flightRetryCount && canFlyForReturn()) {
 			startFlyingBackToMine();
 			return;
 		}
@@ -1936,11 +1988,11 @@ public final class AutomationController {
 			watchdogStationaryScans = 0;
 			return false;
 		}
-		if (++watchdogStationaryScans < 30) return false;
+		if (++watchdogStationaryScans < monitorScans(advanced.navigationStallTimeoutSeconds)) return false;
 		watchdogStationaryScans = 0;
-		if (++watchdogRetries > 2) {
+		if (++watchdogRetries > advanced.navigationRetryCount) {
 			stopProcesses();
-			transition(AutomationState.ERROR, "Navigation made no positional progress after two retries toward " + target.toShortString() + ".");
+			transition(AutomationState.ERROR, "Navigation made no positional progress after " + advanced.navigationRetryCount + " retries toward " + target.toShortString() + ".");
 			return true;
 		}
 		restartWatchedNavigation();
@@ -1982,13 +2034,13 @@ public final class AutomationController {
 			case RETURNING_TO_MINE -> beginReturnToMine();
 			case NAVIGATING_TO_RESUPPLY, NAVIGATING_TO_DURABILITY_SUPPLY -> {
 				BetterBlockPos player = baritone.getPlayerContext().playerFeet();
-				if (player.distSqr(activeSupplyStand) > (double) UNLOAD_WALK_DISTANCE * UNLOAD_WALK_DISTANCE && canFlyToSupply()) startFlyingToSupply();
+				if (player.distSqr(activeSupplyStand) > navigationFlightDistanceSquared() && canFlyToSupply()) startFlyingToSupply();
 				else startWalkingToSupply();
 			}
 			case NAVIGATING_TO_PERIMETER_PORTAL, NAVIGATING_TO_REPAIR_PORTAL, NAVIGATING_TO_REPAIR_MACHINE -> {
 				if (repairStage == RepairStage.RETURN_TO_MACHINE_TAKEOFF) {
 					repairFlying = false;
-					repairFlightAttempts = 2;
+					repairFlightAttempts = advanced.flightRetryCount;
 					startWalkingForRepair(state);
 				} else startRepairNavigation(repairNavigationTarget, state);
 			}
@@ -2032,10 +2084,10 @@ public final class AutomationController {
 		int maxY = baritone.getPlayerContext().world().dimensionType().minY()
 				+ baritone.getPlayerContext().world().dimensionType().height() - 2;
 		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
-		for (int dx = -UNLOAD_LANDING_SEARCH_RADIUS; dx <= UNLOAD_LANDING_SEARCH_RADIUS; dx++) {
-			for (int dz = -UNLOAD_LANDING_SEARCH_RADIUS; dz <= UNLOAD_LANDING_SEARCH_RADIUS; dz++) {
+		for (int dx = -advanced.unloadLandingSearchRadius; dx <= advanced.unloadLandingSearchRadius; dx++) {
+			for (int dz = -advanced.unloadLandingSearchRadius; dz <= advanced.unloadLandingSearchRadius; dz++) {
 				int horizontalDistanceSquared = dx * dx + dz * dz;
-				if (horizontalDistanceSquared == 0 || horizontalDistanceSquared > UNLOAD_LANDING_SEARCH_RADIUS * UNLOAD_LANDING_SEARCH_RADIUS) continue;
+				if (horizontalDistanceSquared == 0 || horizontalDistanceSquared > advanced.unloadLandingSearchRadius * advanced.unloadLandingSearchRadius) continue;
 				int x = point.x + dx;
 				int z = point.z + dz;
 				BlockPos position = closestSafeStandingPosition(x, z, preferredY, minY, maxY);
@@ -2095,7 +2147,7 @@ public final class AutomationController {
 		if (distance == 0.0) return new Vec3(centerX, standingBlock.getY(), centerZ);
 		double unitX = dx / distance;
 		double unitZ = dz / distance;
-		double maxOffset = 0.7;
+		double maxOffset = 0.5 + advanced.unloadEdgeInset;
 		double xScale = Math.abs(unitX) < 1.0E-6 ? Double.POSITIVE_INFINITY : maxOffset / Math.abs(unitX);
 		double zScale = Math.abs(unitZ) < 1.0E-6 ? Double.POSITIVE_INFINITY : maxOffset / Math.abs(unitZ);
 		double scale = Math.min(xScale, zScale);
@@ -2193,7 +2245,7 @@ public final class AutomationController {
 	}
 
 	private void tickEating() {
-		if (baritone.getPlayerContext().player().getFoodData().getFoodLevel() > FOOD_LEVEL_THRESHOLD) {
+		if (baritone.getPlayerContext().player().getFoodData().getFoodLevel() > advanced.foodLevelThreshold) {
 			baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
 			Minecraft.getInstance().options.keyUse.setDown(false);
 			if (stateBeforeEating == AutomationState.MINING && miningProcess != null) {
@@ -2341,12 +2393,28 @@ public final class AutomationController {
 		return stack.getMaxDamage() - stack.getDamageValue();
 	}
 
-	private static int durabilityThreshold(ItemStack stack) {
+	private int durabilityThreshold(ItemStack stack) {
 		return durabilityThreshold(stack.getItem());
 	}
 
-	private static int durabilityThreshold(Item item) {
-		return item == Items.ELYTRA ? ELYTRA_DURABILITY_THRESHOLD : TOOL_DURABILITY_THRESHOLD;
+	private int durabilityThreshold(Item item) {
+		return item == Items.ELYTRA ? advanced.elytraDurabilityThreshold : advanced.toolDurabilityThreshold;
+	}
+
+	private int dropStableScanLimit() {
+		return monitorScans(advanced.dropCollectionStableSeconds);
+	}
+
+	private double navigationFlightDistanceSquared() {
+		return (double) advanced.elytraNavigationMinDistance * advanced.elytraNavigationMinDistance;
+	}
+
+	private static int ticks(double seconds) {
+		return Math.max(1, (int) Math.ceil(seconds * 20.0));
+	}
+
+	private static int monitorScans(double seconds) {
+		return Math.max(1, (int) Math.ceil(seconds * 20.0 / MONITOR_INTERVAL_TICKS));
 	}
 
 	private static int menuSlot(int inventorySlot) {
