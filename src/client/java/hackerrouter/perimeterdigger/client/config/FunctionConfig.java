@@ -7,4 +7,5 @@ public final class FunctionConfig {
 	public boolean durabilityRecovery = true;
 	public boolean resupply = true;
 	public boolean elytraNavigation = true;
+	public boolean sleep = false;
 }

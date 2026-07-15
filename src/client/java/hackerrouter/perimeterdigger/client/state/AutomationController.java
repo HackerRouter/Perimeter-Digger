@@ -38,6 +38,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.BaseFireBlock;
+import net.minecraft.world.level.block.BedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.SlabBlock;
@@ -54,6 +55,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public final class AutomationController {
@@ -78,6 +80,7 @@ public final class AutomationController {
 	private Set<Item> unloadingWhitelist = Set.of();
 	private PositionConfig consumableSupplyPoint;
 	private PositionConfig durabilitySupplyPoint;
+	private PositionConfig bedPoint;
 	private PositionConfig perimeterPortalOverworld;
 	private PositionConfig perimeterPortalNether;
 	private PositionConfig repairPortalOverworld;
@@ -129,6 +132,14 @@ public final class AutomationController {
 	private Boolean savedRepairAllowBreak;
 	private Boolean savedRepairAllowPlace;
 	private boolean debugStage7Only;
+	private AutomationState stateBeforeSleep = AutomationState.IDLE;
+	private BlockPos activeBed;
+	private BlockPos activeBedStand;
+	private boolean bedFlying;
+	private int bedFlightAttempts;
+	private int sleepInteractionTicks;
+	private boolean sleepEntered;
+	private boolean debugSleepOnly;
 	private List<UnloadCandidate> unloadCandidates = List.of();
 	private Vec3 unloadEdgePosition;
 	private int unloadCandidateIndex;
@@ -151,6 +162,7 @@ public final class AutomationController {
 	private boolean durabilityRecoveryEnabled = true;
 	private boolean resupplyEnabled = true;
 	private boolean elytraNavigationEnabled = true;
+	private boolean sleepEnabled;
 	private AdvancedConfig advanced = new AdvancedConfig();
 
 	public List<String> start(PerimeterConfig config) {
@@ -172,6 +184,7 @@ public final class AutomationController {
 		this.unloadingWhitelist = items(config.unloadingWhitelist);
 		this.consumableSupplyPoint = config.consumableSupplyPoint;
 		this.durabilitySupplyPoint = config.durabilitySupplyPoint;
+		this.bedPoint = config.bedPoint;
 		updateFunctions(config.functions);
 		updateAdvanced(config.advanced);
 		loadRepairConfiguration(config);
@@ -182,6 +195,7 @@ public final class AutomationController {
 		this.debugUnloadOnly = false;
 		this.debugStage6Only = false;
 		this.debugStage7Only = false;
+		this.debugSleepOnly = false;
 		this.stableInventoryScans = 0;
 		this.inventoryClicks.clear();
 		BaritoneAPI.getSettings().itemSaver.value = true;
@@ -196,7 +210,7 @@ public final class AutomationController {
 	}
 
 	public List<String> debugStage5(PerimeterConfig config) {
-		transition(AutomationState.VALIDATING, "Validating stage 5 debug configuration");
+		transition(AutomationState.VALIDATING, "Validating unloading debug configuration");
 		if (config.unloadingPoints.isEmpty()) {
 			transition(AutomationState.ERROR, "Missing or invalid configuration: unloading_points");
 			return List.of("unloading_points");
@@ -221,15 +235,15 @@ public final class AutomationController {
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
 		requestUnload();
-		return state == AutomationState.ERROR ? List.of("stage5_start") : List.of();
+		return state == AutomationState.ERROR ? List.of("unload_start") : List.of();
 	}
 
 	public List<String> debugStage6(PerimeterConfig config, boolean durability) {
 		SupplyKind kind = durability ? SupplyKind.DURABILITY : SupplyKind.CONSUMABLES;
 		PositionConfig point = durability ? config.durabilitySupplyPoint : config.consumableSupplyPoint;
-		transition(AutomationState.VALIDATING, "Validating stage 6 debug configuration");
+		transition(AutomationState.VALIDATING, "Validating supply debug configuration");
 		if (point == null) {
-			transition(AutomationState.ERROR, "Missing stage 6 supply point.");
+			transition(AutomationState.ERROR, "The requested supply chest point is not configured.");
 			return List.of(durability ? "durability_supply_point" : "consumable_supply_point");
 		}
 		stopProcesses();
@@ -250,18 +264,18 @@ public final class AutomationController {
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
 		if (kind == SupplyKind.DURABILITY && captureDurabilitySupplyPlan().targetHealthyCounts().isEmpty()) {
-			transition(AutomationState.ERROR, "No low-durability tool or elytra was found for stage 6 debug.");
+			transition(AutomationState.ERROR, "No low-durability tool or elytra was found for durability supply debug.");
 			return List.of("low_durability_item");
 		}
 		beginSupply(kind, true);
-		return state == AutomationState.ERROR ? List.of("stage6_start") : List.of();
+		return state == AutomationState.ERROR ? List.of("supply_start") : List.of();
 	}
 
 	public List<String> debugStage7(PerimeterConfig config) {
-		transition(AutomationState.VALIDATING, "Validating stage 7 debug configuration");
+		transition(AutomationState.VALIDATING, "Validating repair debug configuration");
 		List<String> missing = validateRepairConfiguration(config);
 		if (!missing.isEmpty()) {
-			transition(AutomationState.ERROR, "Missing or invalid stage 7 configuration: " + String.join(", ", missing) + ".");
+			transition(AutomationState.ERROR, "Missing or invalid repair configuration: " + String.join(", ", missing) + ".");
 			return missing;
 		}
 		stopProcesses();
@@ -281,11 +295,40 @@ public final class AutomationController {
 		return List.of();
 	}
 
+	public List<String> debugSleep(PerimeterConfig config) {
+		transition(AutomationState.VALIDATING, "Validating sleep debug configuration");
+		if (config.bedPoint == null) {
+			transition(AutomationState.ERROR, "No bed point is configured.");
+			return List.of("bed_point");
+		}
+		stopProcesses();
+		bindBaritone();
+		this.bedPoint = config.bedPoint;
+		updateFunctions(config.functions);
+		updateAdvanced(config.advanced);
+		this.debugSleepOnly = true;
+		BaritoneAPI.getSettings().elytraAutoSwap.value = true;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.elytraDurabilityThreshold;
+		BaritoneAPI.getSettings().elytraAutoJump.value = true;
+		BaritoneAPI.getSettings().allowSprint.value = true;
+		BaritoneAPI.getSettings().allowParkour.value = true;
+		if (!isBedTime()) {
+			transition(AutomationState.ERROR, "Sleep debug can only start at night in the Overworld.");
+			return List.of("night_time");
+		}
+		beginSleepFlow(true);
+		return state == AutomationState.ERROR ? List.of("sleep_start") : List.of();
+	}
+
 	public void tick() {
 		if (baritone == null || baritone.getPlayerContext().player() == null) return;
 		executeInventoryClick();
 		if (state == AutomationState.EATING) {
 			tickEating();
+			return;
+		}
+		if (state == AutomationState.SLEEPING) {
+			tickSleeping();
 			return;
 		}
 		if (state == AutomationState.UNLOADING) {
@@ -310,7 +353,7 @@ public final class AutomationController {
 		}
 		if (++tickCounter % MONITOR_INTERVAL_TICKS != 0) return;
 		if (watchdogNavigationTarget() != null && !baritone.getPlayerContext().player().isFallFlying() && !isInsideNetherPortal()
-				&& baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= advanced.foodLevelThreshold
+				&& shouldEat()
 				&& eatEnabled && beginEating()) return;
 		if (tickNavigationWatchdog()) return;
 		if (state == AutomationState.NAVIGATING_TO_UNLOAD) {
@@ -329,6 +372,10 @@ public final class AutomationController {
 			tickSupplyNavigation();
 			return;
 		}
+		if (state == AutomationState.NAVIGATING_TO_BED) {
+			tickBedNavigation();
+			return;
+		}
 		if (state == AutomationState.NAVIGATING_TO_PERIMETER_PORTAL || state == AutomationState.NAVIGATING_TO_REPAIR_PORTAL
 				|| state == AutomationState.NAVIGATING_TO_REPAIR_MACHINE) {
 			tickRepairNavigation();
@@ -342,7 +389,11 @@ public final class AutomationController {
 				) return;
 		if (!inventoryClicks.isEmpty()) return;
 		ResourceCheck resources = inspectResources();
-		if (eatEnabled && baritone.getPlayerContext().player().getFoodData().getFoodLevel() <= advanced.foodLevelThreshold && beginEating()) return;
+		if (sleepEnabled && bedPoint != null && isBedTime()) {
+			beginSleepFlow(false);
+			return;
+		}
+		if (eatEnabled && shouldEat() && beginEating()) return;
 		if (resources.replacement() != null) {
 			performReplacement(resources.replacement());
 			return;
@@ -395,6 +446,8 @@ public final class AutomationController {
 		resetNavigationWatchdog();
 		debugUnloadOnly = false;
 		debugStage6Only = false;
+		debugSleepOnly = false;
+		clearSleepContext();
 		clearSupplyContext();
 		clearRepairContext();
 		transition(AutomationState.IDLE, "Stopped");
@@ -425,6 +478,7 @@ public final class AutomationController {
 		durabilityRecoveryEnabled = value.durabilityRecovery;
 		resupplyEnabled = value.resupply;
 		elytraNavigationEnabled = value.elytraNavigation;
+		sleepEnabled = value.sleep;
 	}
 
 	public void updateAdvanced(AdvancedConfig advanced) {
@@ -484,6 +538,8 @@ public final class AutomationController {
 		resetNavigationWatchdog();
 		debugUnloadOnly = false;
 		debugStage6Only = false;
+		debugSleepOnly = false;
+		clearSleepContext();
 		clearSupplyContext();
 		clearRepairContext();
 		transition(AutomationState.IDLE, "World changed");
@@ -602,7 +658,7 @@ public final class AutomationController {
 
 	private void beginRepairFlow(boolean debug) {
 		if (!baritone.getPlayerContext().world().dimension().equals(Level.OVERWORLD)) {
-			transition(AutomationState.ERROR, "Stage 7 must start in the Overworld.");
+			transition(AutomationState.ERROR, "The remote repair flow must start in the Overworld.");
 			return;
 		}
 		if (!validateRepairConfigurationValues()) return;
@@ -614,8 +670,8 @@ public final class AutomationController {
 		repairPlan = captureRepairPlan(debug);
 		if (repairPlan.targetCounts().isEmpty()) {
 			transition(AutomationState.ERROR, debug
-					? "No damaged tool or elytra requires stage 7 debug repair."
-					: "No low-durability tool or elytra requires stage 7 repair.");
+					? "No damaged tool or elytra requires repair debug."
+					: "No low-durability tool or elytra requires remote repair.");
 			return;
 		}
 		repairFurnaces = furnaceRow();
@@ -629,7 +685,7 @@ public final class AutomationController {
 	private boolean validateRepairConfigurationValues() {
 		if (perimeterPortalOverworld == null || perimeterPortalNether == null || repairPortalOverworld == null
 				|| repairPortalNether == null || furnaceRowStart == null || furnaceRowEnd == null) {
-			transition(AutomationState.ERROR, "Stage 7 portal or furnace configuration is incomplete.");
+			transition(AutomationState.ERROR, "Remote repair portal or furnace configuration is incomplete.");
 			return false;
 		}
 		return true;
@@ -677,7 +733,7 @@ public final class AutomationController {
 		repairFlying = true;
 		repairFlightAttempts++;
 		elytraProcess.pathTo(repairNavigationTarget);
-		transition(navigationState, "Flying to stage 7 target " + repairNavigationTarget.toShortString() + ".");
+		transition(navigationState, "Flying to repair target " + repairNavigationTarget.toShortString() + ".");
 	}
 
 	private void startWalkingForRepair(AutomationState navigationState) {
@@ -690,7 +746,7 @@ public final class AutomationController {
 		} else {
 			customGoalProcess.setGoalAndPath(new GoalBlock(repairNavigationTarget));
 		}
-		transition(navigationState, "Walking to stage 7 target " + repairNavigationTarget.toShortString() + ".");
+		transition(navigationState, "Walking to repair target " + repairNavigationTarget.toShortString() + ".");
 	}
 
 	private void tickRepairNavigation() {
@@ -720,7 +776,7 @@ public final class AutomationController {
 			return;
 		}
 		restoreRepairNavigationSettings();
-		transition(AutomationState.ERROR, "Stage 7 target is unreachable: " + repairNavigationTarget.toShortString() + ".");
+		transition(AutomationState.ERROR, "Repair target is unreachable: " + repairNavigationTarget.toShortString() + ".");
 	}
 
 	private void restoreRepairNavigationSettings() {
@@ -737,12 +793,12 @@ public final class AutomationController {
 		postPortalNavigationState = null;
 		AutomationState portalState = repairStage == RepairStage.OUTBOUND_PERIMETER_PORTAL || repairStage == RepairStage.RETURN_PERIMETER_PORTAL
 				? AutomationState.ENTERING_PERIMETER_PORTAL : AutomationState.ENTERING_REPAIR_PORTAL;
-		transition(portalState, "Waiting inside stage 7 portal " + repairNavigationTarget.toShortString() + ".");
+		transition(portalState, "Waiting inside repair portal " + repairNavigationTarget.toShortString() + ".");
 	}
 
 	private void tickEnteringRepairPortal() {
 		if (++portalWaitTicks > ticks(advanced.portalTransitionTimeoutSeconds)) {
-			transition(AutomationState.ERROR, "Timed out while waiting for the stage 7 portal transition.");
+			transition(AutomationState.ERROR, "Timed out while waiting for the repair portal transition.");
 			return;
 		}
 		baritone.getInputOverrideHandler().setInputForceState(Input.MOVE_FORWARD, false);
@@ -786,7 +842,7 @@ public final class AutomationController {
 				repairStage = RepairStage.RETURN_TO_MINE;
 				beginClearRepairPortal(position(perimeterPortalOverworld), null, null);
 			}
-			default -> transition(AutomationState.ERROR, "Unexpected stage 7 portal transition.");
+			default -> transition(AutomationState.ERROR, "Unexpected repair portal transition.");
 		}
 	}
 
@@ -800,7 +856,7 @@ public final class AutomationController {
 		if (!portalExitCandidates.isEmpty()) startPortalExitPath();
 		transition(AutomationState.CLEARING_REPAIR_PORTAL, portalExitCandidates.isEmpty()
 				? "Waiting for safe portal exit positions to load near " + portal.toShortString() + "."
-				: "Walking clear of stage 7 portal " + portal.toShortString() + ".");
+				: "Walking clear of repair portal " + portal.toShortString() + ".");
 	}
 
 	private void tickClearRepairPortal() {
@@ -824,7 +880,7 @@ public final class AutomationController {
 		portalExitCandidates = findPortalExitCandidates(portalExitOrigin);
 		if (!portalExitCandidates.isEmpty()) {
 			startPortalExitPath();
-			synchronize(AutomationState.CLEARING_REPAIR_PORTAL, "Walking clear of the stage 7 portal.");
+			synchronize(AutomationState.CLEARING_REPAIR_PORTAL, "Walking clear of the repair portal.");
 			return;
 		}
 		synchronize(AutomationState.CLEARING_REPAIR_PORTAL, "Waiting for safe portal exit positions to load.");
@@ -895,14 +951,18 @@ public final class AutomationController {
 	}
 
 	private List<BlockPos> furnaceStandPositions(BlockPos furnace) {
+		return interactionStandPositions(furnace);
+	}
+
+	private List<BlockPos> interactionStandPositions(BlockPos target) {
 		List<BlockPos> positions = new ArrayList<>();
 		var world = Minecraft.getInstance().level;
 		for (int dx = -4; dx <= 4; dx++) {
 			for (int dz = -4; dz <= 4; dz++) {
 				if (dx == 0 && dz == 0) continue;
-				BlockPos position = furnace.offset(dx, 0, dz);
+				BlockPos position = target.offset(dx, 0, dz);
 				if (world != null && world.getBlockState(position).getBlock() instanceof SlabBlock) position = position.above();
-				if (isFurnaceStandPosition(position, furnace)) positions.add(position);
+				if (isInteractionStandPosition(position, target)) positions.add(position);
 			}
 		}
 		return positions;
@@ -914,11 +974,29 @@ public final class AutomationController {
 				.orElseThrow(() -> new IllegalStateException("No safe reachable-distance stand was found for furnace " + furnace.toShortString() + "."));
 	}
 
+	private Optional<BlockPos> closestInteractionStand(BlockPos target) {
+		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
+		return interactionStandPositions(target).stream().min(Comparator.comparingDouble(player::distSqr));
+	}
+
 	private boolean canReachFurnace(BlockPos furnace) {
-		return baritone.getPlayerContext().player().getEyePosition().distanceToSqr(Vec3.atCenterOf(furnace)) <= FURNACE_INTERACTION_DISTANCE_SQUARED;
+		return canReachInteractionTarget(furnace);
 	}
 
 	private boolean isFurnaceStandPosition(BlockPos position, BlockPos furnace) {
+		return isInteractionStandPosition(position, furnace);
+	}
+
+	private boolean canReachInteractionTarget(BlockPos target) {
+		return baritone.getPlayerContext().player().getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) <= FURNACE_INTERACTION_DISTANCE_SQUARED;
+	}
+
+	private boolean isAtInteractionStand(BlockPos target) {
+		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
+		return interactionStandPositions(target).stream().anyMatch(player::equals);
+	}
+
+	private boolean isInteractionStandPosition(BlockPos position, BlockPos target) {
 		var world = Minecraft.getInstance().level;
 		if (world == null) return false;
 		BlockPos floor = position.below();
@@ -933,7 +1011,7 @@ public final class AutomationController {
 				|| !feetState.getCollisionShape(world, position).isEmpty()
 				|| !headState.getCollisionShape(world, head).isEmpty()) return false;
 		Vec3 eye = new Vec3(position.getX() + 0.5, position.getY() + 1.62, position.getZ() + 0.5);
-		return eye.distanceToSqr(Vec3.atCenterOf(furnace)) <= FURNACE_INTERACTION_DISTANCE_SQUARED;
+		return eye.distanceToSqr(Vec3.atCenterOf(target)) <= FURNACE_INTERACTION_DISTANCE_SQUARED;
 	}
 
 	private void applyRepairRestrictions() {
@@ -965,7 +1043,8 @@ public final class AutomationController {
 		returnAction = ReturnAction.AFTER_SUPPLY;
 		supplyKind = kind;
 		activeSupplyPoint = point;
-		activeSupplyStand = new BlockPos(point.x, point.y + 1, point.z);
+		BlockPos chest = position(point);
+		activeSupplyStand = closestInteractionStand(chest).orElse(chest.above());
 		supplyFlightAttempts = 0;
 		durabilitySupplyPlan = kind == SupplyKind.DURABILITY ? captureDurabilitySupplyPlan() : null;
 		if (kind == SupplyKind.DURABILITY && durabilitySupplyPlan.targetHealthyCounts().isEmpty()) {
@@ -1011,17 +1090,25 @@ public final class AutomationController {
 	private void startWalkingToSupply() {
 		supplyFlying = false;
 		disablePlacementForNavigation();
-		if (baritone.getPlayerContext().playerFeet().equals(activeSupplyStand)) {
+		BlockPos chest = position(activeSupplyPoint);
+		if (isAtInteractionStand(chest)) {
 			restoreAllowPlace();
 			beginSupplyInteraction();
 			return;
 		}
-		customGoalProcess.setGoalAndPath(new GoalBlock(activeSupplyStand));
+		List<BlockPos> stands = interactionStandPositions(chest);
+		if (!stands.isEmpty()) {
+			activeSupplyStand = stands.stream().min(Comparator.comparingDouble(baritone.getPlayerContext().playerFeet()::distSqr)).orElseThrow();
+			customGoalProcess.setGoalAndPath(new GoalComposite(stands.stream().map(GoalBlock::new).toArray(Goal[]::new)));
+		} else {
+			activeSupplyStand = chest.above();
+			customGoalProcess.setGoalAndPath(new GoalBlock(activeSupplyStand));
+		}
 		transition(supplyNavigationState(), "Walking to the " + supplyKind.displayName + " supply chest " + activeSupplyStand.toShortString() + ".");
 	}
 
 	private void tickSupplyNavigation() {
-		if (baritone.getPlayerContext().playerFeet().equals(activeSupplyStand)) {
+		if (isAtInteractionStand(position(activeSupplyPoint))) {
 			if (elytraProcess.isActive()) elytraProcess.onLostControl();
 			customGoalProcess.onLostControl();
 			restoreElytraMinimumDurability();
@@ -1284,6 +1371,152 @@ public final class AutomationController {
 		activeSupplyStand = null;
 		supplyPhase = null;
 		beginReturnToMine();
+	}
+
+	private void beginSleepFlow(boolean debug) {
+		if (bedPoint == null) return;
+		stateBeforeSleep = state;
+		debugSleepOnly = debug;
+		miningReturnPoint = baritone.getPlayerContext().playerFeet();
+		miningReturnDimension = baritone.getPlayerContext().world().dimension();
+		returnAction = ReturnAction.AFTER_SLEEP;
+		activeBed = position(bedPoint);
+		activeBedStand = closestInteractionStand(activeBed).orElse(activeBed.above());
+		bedFlying = false;
+		bedFlightAttempts = 0;
+		sleepInteractionTicks = 0;
+		sleepEntered = false;
+		stopProcesses();
+		if (baritone.getPlayerContext().playerFeet().distSqr(activeBedStand) > navigationFlightDistanceSquared() && canFlyToSupply()) {
+			startFlyingToBed();
+		} else {
+			startWalkingToBed();
+		}
+	}
+
+	private void startWalkingToBed() {
+		bedFlying = false;
+		disablePlacementForNavigation();
+		if (isAtInteractionStand(activeBed)) {
+			restoreAllowPlace();
+			beginSleeping();
+			return;
+		}
+		List<BlockPos> stands = interactionStandPositions(activeBed);
+		if (!stands.isEmpty()) {
+			activeBedStand = stands.stream().min(Comparator.comparingDouble(baritone.getPlayerContext().playerFeet()::distSqr)).orElseThrow();
+			customGoalProcess.setGoalAndPath(new GoalComposite(stands.stream().map(GoalBlock::new).toArray(Goal[]::new)));
+		} else {
+			activeBedStand = activeBed.above();
+			customGoalProcess.setGoalAndPath(new GoalBlock(activeBedStand));
+		}
+		transition(AutomationState.NAVIGATING_TO_BED, "Walking to a reachable position near bed " + activeBed.toShortString() + ".");
+	}
+
+	private void startFlyingToBed() {
+		restoreAllowPlace();
+		if (savedElytraMinFireworksBeforeLanding == null) {
+			savedElytraMinFireworksBeforeLanding = BaritoneAPI.getSettings().elytraMinFireworksBeforeLanding.value;
+		}
+		BaritoneAPI.getSettings().elytraMinFireworksBeforeLanding.value = -1;
+		if (savedElytraMinimumDurability == null) savedElytraMinimumDurability = BaritoneAPI.getSettings().elytraMinimumDurability.value;
+		BaritoneAPI.getSettings().elytraMinimumDurability.value = advanced.emergencyFlightDurabilityThreshold;
+		bedFlying = true;
+		bedFlightAttempts++;
+		elytraProcess.pathTo(activeBedStand);
+		transition(AutomationState.NAVIGATING_TO_BED, "Flying near bed " + activeBed.toShortString() + ".");
+	}
+
+	private void tickBedNavigation() {
+		if (!isBedTime()) {
+			stopProcesses();
+			restoreElytraMinimumDurability();
+			restoreElytraFireworkReserve();
+			restoreAllowPlace();
+			beginReturnToMine();
+			return;
+		}
+		if (isAtInteractionStand(activeBed)) {
+			stopProcesses();
+			restoreElytraMinimumDurability();
+			restoreElytraFireworkReserve();
+			restoreAllowPlace();
+			beginSleeping();
+			return;
+		}
+		if (bedFlying) {
+			if (elytraProcess.isActive()) return;
+			restoreElytraMinimumDurability();
+			restoreElytraFireworkReserve();
+			startWalkingToBed();
+			return;
+		}
+		if (customGoalProcess.isActive()) return;
+		if (activeBedStand.getY() > baritone.getPlayerContext().playerFeet().y
+				&& bedFlightAttempts < advanced.flightRetryCount && canFlyToSupply()) {
+			startFlyingToBed();
+			return;
+		}
+		restoreAllowPlace();
+		transition(AutomationState.ERROR, "No reachable position was found near bed " + activeBed.toShortString() + ".");
+	}
+
+	private void beginSleeping() {
+		var world = Minecraft.getInstance().level;
+		if (world == null || !world.isLoaded(activeBed) || !(world.getBlockState(activeBed).getBlock() instanceof BedBlock)) {
+			transition(AutomationState.ERROR, "The configured bed point does not contain a bed: " + activeBed.toShortString() + ".");
+			return;
+		}
+		sleepInteractionTicks = 0;
+		sleepEntered = false;
+		transition(AutomationState.SLEEPING, "Entering bed " + activeBed.toShortString() + ".");
+	}
+
+	private void tickSleeping() {
+		if (baritone.getPlayerContext().player().isSleeping()) {
+			sleepEntered = true;
+			synchronize(AutomationState.SLEEPING, "Sleeping until morning.");
+			return;
+		}
+		if (sleepEntered || !isBedTime()) {
+			beginReturnToMine();
+			return;
+		}
+		if (sleepInteractionTicks++ > ticks(advanced.supplyInteractionTimeoutSeconds)) {
+			transition(AutomationState.ERROR, "Timed out while entering bed " + activeBed.toShortString() + ".");
+			return;
+		}
+		Vec3 hitLocation = Vec3.atCenterOf(activeBed);
+		baritone.getLookBehavior().updateTarget(RotationUtils.calcRotationFromVec3d(
+				baritone.getPlayerContext().playerHead(), hitLocation, baritone.getPlayerContext().playerRotations()), true);
+		if (sleepInteractionTicks % 5 == 1) {
+			baritone.getPlayerContext().playerController().processRightClickBlock(
+					baritone.getPlayerContext().player(), baritone.getPlayerContext().world(), InteractionHand.MAIN_HAND,
+					new BlockHitResult(hitLocation, Direction.UP, activeBed, false));
+		}
+	}
+
+	private boolean isBedTime() {
+		var world = Minecraft.getInstance().level;
+		if (world == null || !world.dimension().equals(Level.OVERWORLD)) return false;
+		var clock = world.dimensionType().defaultClock();
+		if (clock.isEmpty()) return false;
+		long dayTime = Math.floorMod(world.clockManager().getTotalTicks(clock.get()), 24000L);
+		return dayTime >= 12542L && dayTime < 23460L;
+	}
+
+	private void clearSleepContext() {
+		restoreElytraMinimumDurability();
+		restoreElytraFireworkReserve();
+		restoreAllowPlace();
+		stateBeforeSleep = AutomationState.IDLE;
+		activeBed = null;
+		activeBedStand = null;
+		bedFlying = false;
+		bedFlightAttempts = 0;
+		sleepInteractionTicks = 0;
+		sleepEntered = false;
+		debugSleepOnly = false;
 	}
 
 	private void beginFurnaceInteraction() {
@@ -1778,7 +2011,7 @@ public final class AutomationController {
 		baritone.getInputOverrideHandler().setInputForceState(Input.SNEAK, false);
 		if (debugUnloadOnly) {
 			debugUnloadOnly = false;
-			transition(AutomationState.COMPLETE, "Stage 5 debug unloading complete.");
+			transition(AutomationState.COMPLETE, "Unloading debug flow complete.");
 		} else if (miningCompletePending) transition(AutomationState.COMPLETE, "Mining and unloading complete.");
 		else beginReturnToMine();
 	}
@@ -1953,15 +2186,22 @@ public final class AutomationController {
 		if (completedAction == ReturnAction.AFTER_SUPPLY) clearSupplyContext();
 		if (completedAction == ReturnAction.AFTER_SUPPLY && debugStage6Only) {
 			debugStage6Only = false;
-			transition(AutomationState.COMPLETE, "Stage 6 debug supply flow complete.");
+			transition(AutomationState.COMPLETE, "Supply debug flow complete.");
 		} else if (completedAction == ReturnAction.AFTER_SUPPLY && stateBeforeSupply == AutomationState.COLLECTING_DROPS) {
 			beginDropCollection(miningCompletePending);
 		} else if (completedAction == ReturnAction.AFTER_REPAIR && debugStage7Only) {
 			clearRepairContext();
-			transition(AutomationState.COMPLETE, "Stage 7 repair debug flow complete.");
+			transition(AutomationState.COMPLETE, "Repair debug flow complete.");
 		} else if (completedAction == ReturnAction.AFTER_REPAIR) {
 			clearRepairContext();
 			if (stateBeforeSupply == AutomationState.COLLECTING_DROPS) beginDropCollection(miningCompletePending);
+			else startMiningCycle();
+		} else if (completedAction == ReturnAction.AFTER_SLEEP) {
+			boolean debug = debugSleepOnly;
+			AutomationState previous = stateBeforeSleep;
+			clearSleepContext();
+			if (debug) transition(AutomationState.COMPLETE, "Sleep debug flow complete.");
+			else if (previous == AutomationState.COLLECTING_DROPS) beginDropCollection(miningCompletePending);
 			else startMiningCycle();
 		} else {
 			startMiningCycle();
@@ -2003,6 +2243,7 @@ public final class AutomationController {
 		return switch (state) {
 			case RETURNING_TO_MINE -> activeReturnTarget;
 			case NAVIGATING_TO_RESUPPLY, NAVIGATING_TO_DURABILITY_SUPPLY -> activeSupplyStand;
+			case NAVIGATING_TO_BED -> activeBedStand;
 			case NAVIGATING_TO_PERIMETER_PORTAL, NAVIGATING_TO_REPAIR_PORTAL, NAVIGATING_TO_REPAIR_MACHINE -> repairNavigationTarget;
 			case NAVIGATING_TO_UNLOAD -> unloadingPoint == null ? null
 					: new BlockPos(unloadingPoint.point().x, baritone.getPlayerContext().playerFeet().y, unloadingPoint.point().z);
@@ -2015,6 +2256,7 @@ public final class AutomationController {
 		return candidate == AutomationState.RETURNING_TO_MINE
 				|| candidate == AutomationState.NAVIGATING_TO_RESUPPLY
 				|| candidate == AutomationState.NAVIGATING_TO_DURABILITY_SUPPLY
+				|| candidate == AutomationState.NAVIGATING_TO_BED
 				|| candidate == AutomationState.NAVIGATING_TO_PERIMETER_PORTAL
 				|| candidate == AutomationState.NAVIGATING_TO_REPAIR_PORTAL
 				|| candidate == AutomationState.NAVIGATING_TO_REPAIR_MACHINE
@@ -2036,6 +2278,11 @@ public final class AutomationController {
 				BetterBlockPos player = baritone.getPlayerContext().playerFeet();
 				if (player.distSqr(activeSupplyStand) > navigationFlightDistanceSquared() && canFlyToSupply()) startFlyingToSupply();
 				else startWalkingToSupply();
+			}
+			case NAVIGATING_TO_BED -> {
+				BetterBlockPos player = baritone.getPlayerContext().playerFeet();
+				if (player.distSqr(activeBedStand) > navigationFlightDistanceSquared() && canFlyToSupply()) startFlyingToBed();
+				else startWalkingToBed();
 			}
 			case NAVIGATING_TO_PERIMETER_PORTAL, NAVIGATING_TO_REPAIR_PORTAL, NAVIGATING_TO_REPAIR_MACHINE -> {
 				if (repairStage == RepairStage.RETURN_TO_MACHINE_TAKEOFF) {
@@ -2244,8 +2491,14 @@ public final class AutomationController {
 		return true;
 	}
 
+	private boolean shouldEat() {
+		int foodLevel = baritone.getPlayerContext().player().getFoodData().getFoodLevel();
+		return foodLevel <= advanced.foodLevelThreshold
+				|| foodLevel < 20 && baritone.getPlayerContext().player().getHealth() <= advanced.healthEatingThreshold;
+	}
+
 	private void tickEating() {
-		if (baritone.getPlayerContext().player().getFoodData().getFoodLevel() > advanced.foodLevelThreshold) {
+		if (!shouldEat()) {
 			baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
 			Minecraft.getInstance().options.keyUse.setDown(false);
 			if (stateBeforeEating == AutomationState.MINING && miningProcess != null) {
@@ -2475,7 +2728,8 @@ public final class AutomationController {
 		NONE,
 		AFTER_UNLOAD,
 		AFTER_SUPPLY,
-		AFTER_REPAIR
+		AFTER_REPAIR,
+		AFTER_SLEEP
 	}
 
 	private enum ReturnWaypoint {

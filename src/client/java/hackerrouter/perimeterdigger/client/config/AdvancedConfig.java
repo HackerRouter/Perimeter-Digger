@@ -5,6 +5,7 @@ public final class AdvancedConfig {
 	public int elytraDurabilityThreshold = 32;
 	public int emergencyFlightDurabilityThreshold = 5;
 	public int foodLevelThreshold = 14;
+	public double healthEatingThreshold = 16.0;
 	public int foodResupplyTrigger = 1;
 	public int foodResupplyTarget = 64;
 	public int fireworkResupplyTrigger = 10;

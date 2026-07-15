@@ -11,6 +11,7 @@ public final class PerimeterConfig {
 	public Integer diggingMaxY;
 	public PositionConfig consumableSupplyPoint;
 	public PositionConfig durabilitySupplyPoint;
+	public PositionConfig bedPoint;
 	public PositionConfig perimeterPortalOverworld;
 	public PositionConfig perimeterPortalNether;
 	public PositionConfig repairPortalOverworld;

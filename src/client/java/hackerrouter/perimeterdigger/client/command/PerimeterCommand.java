@@ -45,7 +45,7 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 public final class PerimeterCommand {
 	private static final List<String> ADVANCED_KEYS = List.of(
 			"tool_durability_threshold", "elytra_durability_threshold", "emergency_flight_durability_threshold",
-			"food_level_threshold", "food_resupply_trigger", "food_resupply_target",
+			"food_level_threshold", "health_eating_threshold", "food_resupply_trigger", "food_resupply_target",
 			"firework_resupply_trigger", "firework_resupply_target", "drop_collection_radius",
 			"drop_collection_stable_seconds", "inventory_reserved_slots", "mining_blocks_per_empty_slot",
 			"elytra_navigation_min_distance", "unload_landing_search_radius", "unload_edge_inset",
@@ -60,11 +60,13 @@ public final class PerimeterCommand {
 			"eat",
 			"durability_recovery",
 			"resupply",
-			"elytra_navigation"
+			"elytra_navigation",
+			"sleep"
 	);
 	private static final List<String> POINT_KEYS = List.of(
 			"consumable_supply_point",
 			"durability_supply_point",
+			"bed_point",
 			"perimeter_portal_overworld",
 			"perimeter_portal_nether",
 			"repair_portal_overworld",
@@ -128,11 +130,12 @@ public final class PerimeterCommand {
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildDebug() {
 		return literal("debug")
-				.then(literal("stage5").executes(this::debugStage5))
-				.then(literal("stage6")
-						.then(literal("consumables").executes(context -> debugStage6(context, false)))
-						.then(literal("durability").executes(context -> debugStage6(context, true))))
-				.then(literal("stage7").executes(this::debugStage7));
+				.then(literal("unload").executes(this::debugUnload))
+				.then(literal("supply")
+						.then(literal("consumables").executes(context -> debugSupply(context, false)))
+						.then(literal("durability").executes(context -> debugSupply(context, true))))
+				.then(literal("repair").executes(this::debugRepair))
+				.then(literal("sleep").executes(this::debugSleep));
 	}
 
 	private LiteralArgumentBuilder<FabricClientCommandSource> buildPlan() {
@@ -433,6 +436,7 @@ public final class PerimeterCommand {
 		switch (key) {
 			case "consumable_supply_point" -> config.consumableSupplyPoint = position;
 			case "durability_supply_point" -> config.durabilitySupplyPoint = position;
+			case "bed_point" -> config.bedPoint = position;
 			case "perimeter_portal_overworld" -> config.perimeterPortalOverworld = position;
 			case "perimeter_portal_nether" -> config.perimeterPortalNether = position;
 			case "repair_portal_overworld" -> config.repairPortalOverworld = position;
@@ -494,39 +498,52 @@ public final class PerimeterCommand {
 		}
 	}
 
-	private int debugStage5(CommandContext<FabricClientCommandSource> context) {
+	private int debugUnload(CommandContext<FabricClientCommandSource> context) {
 		try {
 			List<String> missing = controller.debugStage5(configs.get());
 			if (!missing.isEmpty()) {
-				return error(context, "Cannot start stage 5 debug. Missing or invalid: " + String.join(", ", missing) + ".");
+				return error(context, "Cannot start unloading debug. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started stage 5 unloading debug flow.");
+			feedback(context, "Started unloading debug flow.");
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
 		}
 	}
 
-	private int debugStage6(CommandContext<FabricClientCommandSource> context, boolean durability) {
+	private int debugSupply(CommandContext<FabricClientCommandSource> context, boolean durability) {
 		try {
 			List<String> missing = controller.debugStage6(configs.get(), durability);
 			if (!missing.isEmpty()) {
-				return error(context, "Cannot start stage 6 debug. Missing or invalid: " + String.join(", ", missing) + ".");
+				return error(context, "Cannot start supply debug. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started stage 6 " + (durability ? "durability" : "consumables") + " debug flow.");
+			feedback(context, "Started " + (durability ? "durability" : "consumables") + " supply debug flow.");
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
 		}
 	}
 
-	private int debugStage7(CommandContext<FabricClientCommandSource> context) {
+	private int debugRepair(CommandContext<FabricClientCommandSource> context) {
 		try {
 			List<String> missing = controller.debugStage7(configs.get());
 			if (!missing.isEmpty()) {
-				return error(context, "Cannot start stage 7 debug. Missing or invalid: " + String.join(", ", missing) + ".");
+				return error(context, "Cannot start repair debug. Missing or invalid: " + String.join(", ", missing) + ".");
 			}
-			feedback(context, "Started stage 7 repair debug flow.");
+			feedback(context, "Started repair debug flow.");
+			return 1;
+		} catch (RuntimeException exception) {
+			return error(context, exception.getMessage());
+		}
+	}
+
+	private int debugSleep(CommandContext<FabricClientCommandSource> context) {
+		try {
+			List<String> missing = controller.debugSleep(configs.get());
+			if (!missing.isEmpty()) {
+				return error(context, "Cannot start sleep debug. Missing or invalid: " + String.join(", ", missing) + ".");
+			}
+			feedback(context, "Started sleep debug flow.");
 			return 1;
 		} catch (RuntimeException exception) {
 			return error(context, exception.getMessage());
@@ -601,6 +618,7 @@ public final class PerimeterCommand {
 				case "durability_recovery" -> functions.durabilityRecovery = enabled;
 				case "resupply" -> functions.resupply = enabled;
 				case "elytra_navigation" -> functions.elytraNavigation = enabled;
+				case "sleep" -> functions.sleep = enabled;
 				default -> throw new IllegalArgumentException("Unknown function: " + name + ".");
 			}
 			configs.save();
@@ -627,7 +645,8 @@ public final class PerimeterCommand {
 					.append(field("eat", functions.eat)).append(separator())
 					.append(field("durability recovery", functions.durabilityRecovery)).append(separator())
 					.append(field("resupply", functions.resupply)).append(separator())
-					.append(field("elytra navigation", functions.elytraNavigation))
+					.append(field("elytra navigation", functions.elytraNavigation)).append(separator())
+					.append(field("sleep", functions.sleep))
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			return 1;
 		} catch (RuntimeException exception) {
@@ -662,6 +681,7 @@ public final class PerimeterCommand {
 					"emergency flight threshold", a.emergencyFlightDurabilityThreshold));
 			feedback(context, advancedLine("Consumables",
 					"food level threshold", a.foodLevelThreshold,
+					"health eating threshold", a.healthEatingThreshold,
 					"food trigger", a.foodResupplyTrigger,
 					"food target", a.foodResupplyTarget,
 					"firework trigger", a.fireworkResupplyTrigger,
@@ -710,6 +730,7 @@ public final class PerimeterCommand {
 			case "elytra_durability_threshold" -> a.elytraDurabilityThreshold = nonNegativeInteger(key, value);
 			case "emergency_flight_durability_threshold" -> a.emergencyFlightDurabilityThreshold = nonNegativeInteger(key, value);
 			case "food_level_threshold" -> a.foodLevelThreshold = rangedInteger(key, value, 0, 20);
+			case "health_eating_threshold" -> a.healthEatingThreshold = ranged(key, value, 0.0, 20.0);
 			case "food_resupply_trigger" -> {
 				int result = nonNegativeInteger(key, value);
 				if (result > a.foodResupplyTarget) throw new IllegalArgumentException(key + " cannot exceed food_resupply_target.");
@@ -767,6 +788,7 @@ public final class PerimeterCommand {
 			case "elytra_durability_threshold" -> a.elytraDurabilityThreshold;
 			case "emergency_flight_durability_threshold" -> a.emergencyFlightDurabilityThreshold;
 			case "food_level_threshold" -> a.foodLevelThreshold;
+			case "health_eating_threshold" -> a.healthEatingThreshold;
 			case "food_resupply_trigger" -> a.foodResupplyTrigger;
 			case "food_resupply_target" -> a.foodResupplyTarget;
 			case "firework_resupply_trigger" -> a.fireworkResupplyTrigger;
@@ -821,8 +843,9 @@ public final class PerimeterCommand {
 					.append(Component.literal(".").withStyle(ChatFormatting.GRAY)));
 			feedback(context, category("Locations")
 					.append(Component.literal(": ").withStyle(ChatFormatting.GRAY))
-					.append(field("consumable supply", config.consumableSupplyPoint)).append(separator())
-					.append(field("durability supply", config.durabilitySupplyPoint)).append(separator())
+					.append(field("consumable supply chest", config.consumableSupplyPoint)).append(separator())
+					.append(field("durability supply chest", config.durabilitySupplyPoint)).append(separator())
+					.append(field("bed", config.bedPoint)).append(separator())
 					.append(field("perimeter portals", pairValue(config.perimeterPortalOverworld, config.perimeterPortalNether))).append(separator())
 					.append(field("repair portals", pairValue(config.repairPortalOverworld, config.repairPortalNether))).append(separator())
 					.append(field("furnace row", pairValue(config.furnaceRowStart, config.furnaceRowEnd)))
