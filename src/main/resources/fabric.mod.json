@@ -7,6 +7,12 @@
 	"authors": [
 		"HackerRouter"
 	],
+	"contact": {
+    "homepage": "https://github.com/HackerRouter/Perimeter-Digger",
+    "sources": "https://github.com/HackerRouter/Perimeter-Digger",
+    "issues": "https://github.com/HackerRouter/Perimeter-Digger/issues"
+	},
+
 	"license": "MIT",
 	"icon": "assets/perimeter-digger/icon.png",
 	"environment": "client",
