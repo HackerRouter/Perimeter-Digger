@@ -20,6 +20,8 @@ final class RepairFlow {
 	AutomationState postPortalNavigationState;
 	List<BlockPos> furnaces = List.of();
 	int furnaceIndex;
+	List<BlockPos> furnaceStandCandidates = List.of();
+	int furnaceStandIndex;
 	FurnacePhase furnacePhase;
 	int interactionTicks;
 	BlockPos machineTakeoffPoint;
@@ -43,6 +45,8 @@ final class RepairFlow {
 		postPortalNavigationState = null;
 		furnaces = List.of();
 		furnaceIndex = 0;
+		furnaceStandCandidates = List.of();
+		furnaceStandIndex = 0;
 		furnacePhase = null;
 		interactionTicks = 0;
 		machineTakeoffPoint = null;

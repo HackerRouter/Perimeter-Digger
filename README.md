@@ -148,7 +148,7 @@ Every point uses the block coordinate `<x> <y> <z>`:
 /perimeterdig config set furnace_row_end <x> <y> <z>
 ```
 
-Supply points are chest block coordinates. The bed point is the bed block. The furnace row must be axis-aligned; only its first and last furnace positions are stored. Navigation chooses a nearby position from which the chest or furnace can be reached. Sleeping uses a stricter dedicated stand search and approaches within a 3-block eye-to-bed-center distance before interacting.
+Supply points are chest block coordinates. The bed point is the bed block. The furnace row must be axis-aligned; only its first and last furnace positions are stored. Navigation selects a nearby standing position for beds, supply chests, and furnaces, and approaches within a 3-block eye-to-block-center distance before interacting.
 
 All facilities are optional during normal mining. A missing point or route suppresses only the related automatic action. Debug commands still require the facility they test.
 
@@ -254,7 +254,7 @@ Automatic eating starts when food level is 14 or lower, or when health is 16 or 
 
 All damageable tools in the main inventory and offhand are monitored. Equipped or carried Elytra are monitored only while `elytra_navigation` is enabled. At 32 remaining durability or lower, the mod first tries a higher-durability local replacement and then follows the configured recovery strategy. Emergency travel may continue with an Elytra above 5 remaining durability.
 
-During XP-furnace repair, outputs are collected one at a time. The mod switches repair targets while experience is still being absorbed, advances to the next furnace after durability growth stops, and returns as soon as every target is fully repaired. With `cross_dimension_repair` disabled, only the XP-furnace coordinates are required and are interpreted in the current dimension; the trip does not use portals in either direction.
+During XP-furnace repair, outputs are collected one at a time. The mod switches repair targets while experience is still being absorbed, advances to the next furnace after durability growth stops, and returns as soon as every target is fully repaired. Furnace navigation tries nearby unobstructed interaction-range stands individually and reports both the furnace and last attempted stand only after all candidates fail. With `cross_dimension_repair` disabled, only the XP-furnace coordinates are required and are interpreted in the current dimension; the trip does not use portals in either direction.
 
 Baritone sprinting and parkour are always enabled.
 

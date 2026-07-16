@@ -529,7 +529,8 @@ public final class PerimeterCommand {
 
 	private int resume(CommandContext<FabricClientCommandSource> context) {
 		try {
-			controller.resume();
+			configs.reload();
+			controller.resume(configs.get());
 			feedback(context, Translations.COMMAND.tr("resumed"));
 			return 1;
 		} catch (RuntimeException exception) {

@@ -120,8 +120,7 @@ public final class AutomationController {
 	private boolean sleepEnabled;
 	private AdvancedConfig advanced = new AdvancedConfig();
 	private final ArrayDeque<StateTransition> stateHistory = new ArrayDeque<>();
-	private final InteractionPositionFinder interactionPositionFinder = new InteractionPositionFinder(4, 20.25);
-	private final InteractionPositionFinder bedInteractionPositionFinder = new InteractionPositionFinder(2, 9.0);
+	private final InteractionPositionFinder interactionPositionFinder = new InteractionPositionFinder(2, 9.0);
 	private final NavigationService navigation = new NavigationService();
 	private final SupplyFlow supply = new SupplyFlow();
 	private final UnloadFlow unload = new UnloadFlow();
@@ -138,6 +137,20 @@ public final class AutomationController {
 		this.baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
 		this.miningProcess = baritone.getAreaMineProcess();
 		navigation.bind(baritone);
+		loadMiningConfiguration(config);
+		this.miningCompletePending = false;
+		this.unload.debugOnly = false;
+		this.supply.debugOnly = false;
+		this.repair.debugOnly = false;
+		this.sleep.debugOnly = false;
+		this.stableInventoryScans = 0;
+		this.inventoryClicks.clear();
+		applyMiningSettings();
+		startMiningCycle();
+		return List.of();
+	}
+
+	private void loadMiningConfiguration(PerimeterConfig config) {
 		this.area = new ConfiguredColumnarArea(config.detectedArea, config.diggingMinY, config.diggingMaxY);
 		this.liquidPolicy = policy(config.liquidPolicy);
 		this.durabilityRecoveryMode = config.durabilityRecoveryMode;
@@ -153,13 +166,9 @@ public final class AutomationController {
 		this.unloadingPoints = config.unloadingPoints.entrySet().stream()
 				.map(entry -> new UnloadFlow.NamedPoint(entry.getKey(), entry.getValue()))
 				.toList();
-		this.miningCompletePending = false;
-		this.unload.debugOnly = false;
-		this.supply.debugOnly = false;
-		this.repair.debugOnly = false;
-		this.sleep.debugOnly = false;
-		this.stableInventoryScans = 0;
-		this.inventoryClicks.clear();
+	}
+
+	private void applyMiningSettings() {
 		BaritoneAPI.getSettings().itemSaver.value = true;
 		BaritoneAPI.getSettings().itemSaverThreshold.value = advanced.toolDurabilityThreshold;
 		BaritoneAPI.getSettings().elytraAutoSwap.value = true;
@@ -167,8 +176,6 @@ public final class AutomationController {
 		BaritoneAPI.getSettings().elytraAutoJump.value = true;
 		BaritoneAPI.getSettings().allowSprint.value = true;
 		BaritoneAPI.getSettings().allowParkour.value = true;
-		startMiningCycle();
-		return List.of();
 	}
 
 	public List<String> debugStage5(PerimeterConfig config) {
@@ -447,14 +454,15 @@ public final class AutomationController {
 		transition(AutomationState.PAUSED, Translations.DETAIL.message("mining_paused_manually"));
 	}
 
-	public void resume() {
+	public void resume(PerimeterConfig config) {
 		if (miningProcess == null || state != AutomationState.PAUSED) throw new IllegalStateException("No paused mining task can be resumed.");
+		List<String> invalid = validate(config);
+		if (!invalid.isEmpty()) throw new IllegalArgumentException("Cannot resume. Missing or invalid: " + String.join(", ", invalid) + ".");
+		loadMiningConfiguration(config);
+		applyMiningSettings();
 		AreaMiningStatus status = miningProcess.getAreaMiningStatus();
 		if (status.pauseReason() == AreaMiningStatus.PauseReason.BLOCK_LIMIT_REACHED) beginDropCollection(false);
-		else {
-			miningProcess.resume();
-			transition(AutomationState.MINING, Translations.DETAIL.message("mining_resumed"));
-		}
+		else resumeMiningCycle();
 	}
 
 	public AutomationState state() {
@@ -541,6 +549,20 @@ public final class AutomationController {
 		navigation.stopWalking();
 		miningProcess.mineArea(area, new AreaMiningOptions(liquidPolicy, sealingBlocks, blockLimit));
 		transition(AutomationState.MINING, Translations.DETAIL.message("mining_started", blockLimit, emptySlots));
+	}
+
+	private void resumeMiningCycle() {
+		int emptySlots = emptyInventorySlots();
+		if (emptySlots == 0 && unloadEnabled) {
+			requestUnload();
+			return;
+		}
+		long blockLimit = !collectDropsEnabled || emptySlots == 0
+				? Long.MAX_VALUE
+				: Math.max(1L, (long) Math.max(0, emptySlots - advanced.inventoryReservedSlots) * advanced.miningBlocksPerEmptySlot);
+		navigation.stopWalking();
+		miningProcess.mineArea(area, new AreaMiningOptions(liquidPolicy, sealingBlocks, blockLimit));
+		transition(AutomationState.MINING, Translations.DETAIL.message("mining_resumed"));
 	}
 
 	private void beginDropCollection(boolean miningComplete) {
@@ -651,7 +673,7 @@ public final class AutomationController {
 			startRepairNavigation(position(perimeterPortalOverworld), AutomationState.NAVIGATING_TO_PERIMETER_PORTAL);
 		} else {
 			repair.stage = RepairFlow.Stage.REPAIR_MACHINE;
-			startRepairNavigation(closestFurnaceStand(repair.furnaces.getFirst()), AutomationState.NAVIGATING_TO_REPAIR_MACHINE);
+			startCurrentFurnaceNavigation();
 		}
 	}
 
@@ -716,13 +738,14 @@ public final class AutomationController {
 		if (navigationState == AutomationState.NAVIGATING_TO_PERIMETER_PORTAL) enableBreakingForNavigation();
 		else disablePlacementForNavigation();
 		if (repair.stage == RepairFlow.Stage.REPAIR_MACHINE) {
-			List<BlockPos> stands = furnaceStandPositions(repair.furnaces.get(repair.furnaceIndex));
-			if (stands.isEmpty()) navigation.walk(new GoalBlock(repair.navigationTarget));
-			else navigation.walk(new GoalComposite(stands.stream().map(GoalBlock::new).toArray(Goal[]::new)));
+			navigation.walk(new GoalBlock(repair.navigationTarget));
 		} else {
 			navigation.walk(new GoalBlock(repair.navigationTarget));
 		}
-		transition(navigationState, Translations.DETAIL.message("walking_repair_target", repair.navigationTarget.toShortString()));
+		if (repair.stage == RepairFlow.Stage.REPAIR_MACHINE) {
+			transition(navigationState, Translations.DETAIL.message("walking_furnace_stand",
+					repair.furnaces.get(repair.furnaceIndex).toShortString(), repair.navigationTarget.toShortString()));
+		} else transition(navigationState, Translations.DETAIL.message("walking_repair_target", repair.navigationTarget.toShortString()));
 	}
 
 	private void tickRepairNavigation() {
@@ -746,13 +769,17 @@ public final class AutomationController {
 		}
 		if (navigation.isWalking()) return;
 		restoreAllowPlace();
+		if (repair.stage == RepairFlow.Stage.REPAIR_MACHINE && tryNextFurnaceStand()) return;
 		if (repair.navigationTarget.getY() > baritone.getPlayerContext().playerFeet().y
 				&& repair.flightAttempts < advanced.flightRetryCount && canFlyForRepair()) {
 			startFlyingForRepair(state);
 			return;
 		}
 		restoreRepairNavigationSettings();
-		transition(AutomationState.ERROR, Translations.DETAIL.message("repair_target_unreachable", repair.navigationTarget.toShortString()));
+		if (repair.stage == RepairFlow.Stage.REPAIR_MACHINE) {
+			transition(AutomationState.ERROR, Translations.DETAIL.message("furnace_unreachable",
+					repair.furnaces.get(repair.furnaceIndex).toShortString(), repair.navigationTarget.toShortString()));
+		} else transition(AutomationState.ERROR, Translations.DETAIL.message("repair_target_unreachable", repair.navigationTarget.toShortString()));
 	}
 
 	private void restoreRepairNavigationSettings() {
@@ -840,7 +867,7 @@ public final class AutomationController {
 			restoreAllowPlace();
 			repair.portalExitCandidates = List.of();
 			if (repair.postPortalNavigationState == AutomationState.NAVIGATING_TO_REPAIR_MACHINE) {
-				startRepairNavigation(closestFurnaceStand(repair.furnaces.get(repair.furnaceIndex)), repair.postPortalNavigationState);
+				startCurrentFurnaceNavigation();
 			} else if (repair.postPortalNavigationTarget == null) beginReturnToMine();
 			else startRepairNavigation(repair.postPortalNavigationTarget, repair.postPortalNavigationState);
 			return;
@@ -934,13 +961,38 @@ public final class AutomationController {
 	}
 
 	private List<BlockPos> bedStandPositions(BlockPos bed) {
-		return bedInteractionPositionFinder.find(Minecraft.getInstance().level, bed);
+		return interactionPositionFinder.find(Minecraft.getInstance().level, bed);
 	}
 
-	private BlockPos closestFurnaceStand(BlockPos furnace) {
+	private void startCurrentFurnaceNavigation() {
+		BlockPos furnace = repair.furnaces.get(repair.furnaceIndex);
+		if (canReachFurnace(furnace)) {
+			beginFurnaceInteraction();
+			return;
+		}
 		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
-		return furnaceStandPositions(furnace).stream().min(Comparator.comparingDouble(player::distSqr))
-				.orElse(furnace.above());
+		repair.furnaceStandCandidates = furnaceStandPositions(furnace).stream()
+				.sorted(Comparator.comparingDouble(player::distSqr))
+				.toList();
+		repair.furnaceStandIndex = 0;
+		if (repair.furnaceStandCandidates.isEmpty()) {
+			repair.navigationTarget = furnace;
+			transition(AutomationState.ERROR, Translations.DETAIL.message("furnace_no_safe_stand", furnace.toShortString()));
+			return;
+		}
+		startRepairNavigation(repair.furnaceStandCandidates.getFirst(), AutomationState.NAVIGATING_TO_REPAIR_MACHINE);
+	}
+
+	private boolean tryNextFurnaceStand() {
+		while (++repair.furnaceStandIndex < repair.furnaceStandCandidates.size()) {
+			BlockPos candidate = repair.furnaceStandCandidates.get(repair.furnaceStandIndex);
+			if (candidate.equals(baritone.getPlayerContext().playerFeet())) continue;
+			repair.navigationTarget = candidate;
+			repair.flying = false;
+			startWalkingForRepair(AutomationState.NAVIGATING_TO_REPAIR_MACHINE);
+			return true;
+		}
+		return false;
 	}
 
 	private Optional<BlockPos> closestInteractionStand(BlockPos target) {
@@ -948,7 +1000,7 @@ public final class AutomationController {
 	}
 
 	private Optional<BlockPos> closestBedStand(BlockPos bed) {
-		return bedInteractionPositionFinder.closest(Minecraft.getInstance().level, bed, baritone.getPlayerContext().playerFeet());
+		return interactionPositionFinder.closest(Minecraft.getInstance().level, bed, baritone.getPlayerContext().playerFeet());
 	}
 
 	private boolean canReachFurnace(BlockPos furnace) {
@@ -965,7 +1017,7 @@ public final class AutomationController {
 	}
 
 	private boolean isAtBedStand(BlockPos bed) {
-		return bedInteractionPositionFinder.isAtValidPosition(
+		return interactionPositionFinder.isAtValidPosition(
 				Minecraft.getInstance().level, bed, baritone.getPlayerContext().playerFeet());
 	}
 
@@ -1465,7 +1517,8 @@ public final class AutomationController {
 		if (repair.machineTakeoffPoint == null) repair.machineTakeoffPoint = baritone.getPlayerContext().playerFeet();
 		repair.furnacePhase = RepairFlow.FurnacePhase.PREPARING;
 		repair.interactionTicks = 0;
-		transition(AutomationState.REPAIRING, Translations.DETAIL.message("preparing_furnace", repair.furnaceIndex + 1, repair.furnaces.size()));
+		transition(AutomationState.REPAIRING, Translations.DETAIL.message("preparing_furnace",
+				repair.furnaceIndex + 1, repair.furnaces.size(), incompleteRepairTargets()));
 	}
 
 	private void tickRepairing() {
@@ -1522,11 +1575,16 @@ public final class AutomationController {
 			baritone.getPlayerContext().player().closeContainer();
 			return;
 		}
-		if (repair.interactionTicks++ > ticks(advanced.furnaceInteractionTimeoutSeconds)) {
-			transition(AutomationState.ERROR, Translations.DETAIL.message("furnace_open_timeout", repair.furnaceIndex + 1));
+		BlockPos furnace = repair.furnaces.get(repair.furnaceIndex);
+		if (!canReachFurnace(furnace)) {
+			startCurrentFurnaceNavigation();
 			return;
 		}
-		BlockPos furnace = repair.furnaces.get(repair.furnaceIndex);
+		if (repair.interactionTicks++ > ticks(advanced.furnaceInteractionTimeoutSeconds)) {
+			transition(AutomationState.ERROR, Translations.DETAIL.message("furnace_open_timeout",
+					repair.furnaceIndex + 1, furnace.toShortString(), repair.navigationTarget.toShortString()));
+			return;
+		}
 		Vec3 hitLocation = Vec3.atCenterOf(furnace);
 		baritone.getLookBehavior().updateTarget(RotationUtils.calcRotationFromVec3d(
 				baritone.getPlayerContext().playerHead(), hitLocation, baritone.getPlayerContext().playerRotations()), true);
@@ -1588,7 +1646,7 @@ public final class AutomationController {
 			return;
 		}
 		repair.stage = RepairFlow.Stage.REPAIR_MACHINE;
-		startRepairNavigation(closestFurnaceStand(repair.furnaces.get(repair.furnaceIndex)), AutomationState.NAVIGATING_TO_REPAIR_MACHINE);
+		startCurrentFurnaceNavigation();
 	}
 
 	private RepairFlow.Plan captureRepairPlan(boolean includeAllDamaged) {
@@ -1614,6 +1672,16 @@ public final class AutomationController {
 			if (fullMonitoredItemCount(target.getKey()) < required) return false;
 		}
 		return true;
+	}
+
+	private String incompleteRepairTargets() {
+		List<String> targets = new ArrayList<>();
+		for (Map.Entry<Item, Integer> target : repair.plan.targetCounts().entrySet()) {
+			int required = repair.plan.baselineFullCounts().getOrDefault(target.getKey(), 0) + target.getValue();
+			int full = fullMonitoredItemCount(target.getKey());
+			if (full < required) targets.add(BuiltInRegistries.ITEM.getKey(target.getKey()) + " full=" + full + "/" + required);
+		}
+		return targets.isEmpty() ? "none" : String.join(", ", targets);
 	}
 
 	private boolean repairItemNeedsMoreFullStacks(Item item) {

@@ -1,10 +1,14 @@
 package hackerrouter.perimeterdigger.client.navigation;
 
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.SlabBlock;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
@@ -44,7 +48,9 @@ public final class InteractionPositionFinder {
 	}
 
 	public boolean canReach(Player player, BlockPos target) {
-		return player.getEyePosition().distanceToSqr(Vec3.atCenterOf(target)) <= interactionDistanceSquared;
+		Vec3 eye = player.getEyePosition();
+		return eye.distanceToSqr(Vec3.atCenterOf(target)) <= interactionDistanceSquared
+				&& canSee(player, eye, target);
 	}
 
 	private boolean isValid(ClientLevel world, BlockPos position, BlockPos target) {
@@ -60,6 +66,20 @@ public final class InteractionPositionFinder {
 				|| !feetState.getCollisionShape(world, position).isEmpty()
 				|| !headState.getCollisionShape(world, head).isEmpty()) return false;
 		Vec3 eye = new Vec3(position.getX() + 0.5, position.getY() + 1.62, position.getZ() + 0.5);
-		return eye.distanceToSqr(Vec3.atCenterOf(target)) <= interactionDistanceSquared;
+		Player player = Minecraft.getInstance().player;
+		return player != null && isSafelyWithinReach(position, target, interactionDistanceSquared) && canSee(player, eye, target);
+	}
+
+	private static boolean canSee(Player player, Vec3 eye, BlockPos target) {
+		HitResult hit = player.level().clip(new ClipContext(eye, Vec3.atCenterOf(target),
+				ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+		return hit.getType() == HitResult.Type.BLOCK && ((BlockHitResult) hit).getBlockPos().equals(target);
+	}
+
+	static boolean isSafelyWithinReach(BlockPos position, BlockPos target, double distanceSquared) {
+		double dx = Math.abs(position.getX() - target.getX()) + 0.5;
+		double dy = position.getY() + 1.62 - (target.getY() + 0.5);
+		double dz = Math.abs(position.getZ() - target.getZ()) + 0.5;
+		return dx * dx + dy * dy + dz * dz <= distanceSquared;
 	}
 }
