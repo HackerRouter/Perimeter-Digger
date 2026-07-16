@@ -21,8 +21,20 @@ jobs:
           distribution: 'microsoft'
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
+      - name: download modified Baritone
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.deps"
+
+          curl --fail --location --retry 3 \
+            "https://github.com/HackerRouter/baritone/releases/download/v26.1.1-hr.1/baritone-api-fabric-26.1.1-hr.1.jar" \
+            --output "$GITHUB_WORKSPACE/.deps/baritone-api-fabric.jar"
+
+          echo "182BC016CDDADB339A6CD5B8514CC4C84586A786C440630A125FC519C3E266E8  $GITHUB_WORKSPACE/.deps/baritone-api-fabric.jar" \
+            | sha256sum --check
       - name: build
-        run: ./gradlew build
+        run: |
+          ./gradlew build \
+            -Pbaritone_jar="$GITHUB_WORKSPACE/.deps/baritone-api-fabric.jar"
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:

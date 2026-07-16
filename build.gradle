@@ -20,11 +20,14 @@ loom {
 	}
 }
 
+def baritoneJar = findProperty("baritone_jar")
+        ?: "../baritone/fabric/build/libs/baritone-fabric-1.11.1-21-g918ea5fc-dirty.jar"
+
 dependencies {
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-	implementation files("../baritone/fabric/build/libs/baritone-fabric-1.11.1-17-gb8e1048f-dirty.jar")
+	implementation files(baritoneJar)
 	testImplementation "org.junit.jupiter:junit-jupiter:5.14.1"
 	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
