@@ -6,17 +6,10 @@ Perimeter Digger is a Fabric mod for Minecraft 26.1.1 that uses a modified Barit
 
 ------
 
-## If you are reading this
-## I am preparing an introduction and usage-guide video for mod v1.1
-## Everything below is written for mod v1.1
-## Mod v1.1 has not yet been uploaded to Releases
-## It will be available soon
-## This is a substantial REFACTORINNNNNNG
+### Required mod:
+### [Modified Baritone](https://github.com/HackerRouter/baritone/releases)
 
-------
-
-#### Required mod:
-#### [Modified Baritone](https://github.com/HackerRouter/baritone/releases)
+### Tutorial Video of Perimeter Digger: [BV1yFK56cESA](https://www.bilibili.com/video/BV1yFK56cESA)
 
 ------
 
