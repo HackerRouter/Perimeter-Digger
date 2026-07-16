@@ -276,17 +276,23 @@ Language resources are stored in `assets/perimeter-digger/lang/en_us.json` and `
 
 ## Building
 
-The build expects the modified Baritone Fabric JAR at the path configured in `build.gradle`, currently:
+Building requires the modified Baritone API JAR; an unmodified Baritone release does not provide the APIs used by this mod. The currently compatible published dependency is [Baritone Fabric 26.1.1 hr.1](https://github.com/HackerRouter/baritone/releases/tag/v26.1.1-hr.1).
+
+When `baritone_jar` is not specified, Gradle uses the local development path configured in `build.gradle`. To build without a neighboring Baritone source repository, pass the released JAR explicitly.
+
+Windows:
 
 ```text
-../baritone/fabric/build/libs/baritone-fabric-1.11.1-17-gb8e1048f-dirty.jar
+gradlew.bat clean build -Pbaritone_jar="C:\path\to\baritone-api-fabric-26.1.1-hr.1.jar"
 ```
 
-On Windows:
+Linux:
 
 ```text
-gradlew.bat clean build
+./gradlew clean build -Pbaritone_jar=/path/to/baritone-api-fabric-26.1.1-hr.1.jar
 ```
+
+The repository workflow downloads this pinned Baritone release, verifies its SHA-256 checksum, and passes it through `baritone_jar` automatically.
 
 The mod JAR is written to `build/libs/`.
 
