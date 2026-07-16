@@ -776,6 +776,10 @@ public final class PerimeterCommand {
 		return CommandOutput.field(name, value);
 	}
 
+	private static MutableComponent field(Component name, MutableComponent value) {
+		return CommandOutput.field(name, value);
+	}
+
 	private static MutableComponent field(String name, MutableComponent value) {
 		return CommandOutput.field(name, value);
 	}

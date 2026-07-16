@@ -114,12 +114,14 @@ public final class AutomationController {
 	private boolean unloadEnabled = true;
 	private boolean eatEnabled = true;
 	private boolean durabilityRecoveryEnabled = true;
+	private boolean crossDimensionRepairEnabled = true;
 	private boolean resupplyEnabled = true;
 	private boolean elytraNavigationEnabled = true;
 	private boolean sleepEnabled;
 	private AdvancedConfig advanced = new AdvancedConfig();
 	private final ArrayDeque<StateTransition> stateHistory = new ArrayDeque<>();
 	private final InteractionPositionFinder interactionPositionFinder = new InteractionPositionFinder(4, 20.25);
+	private final InteractionPositionFinder bedInteractionPositionFinder = new InteractionPositionFinder(2, 9.0);
 	private final NavigationService navigation = new NavigationService();
 	private final SupplyFlow supply = new SupplyFlow();
 	private final UnloadFlow unload = new UnloadFlow();
@@ -425,6 +427,7 @@ public final class AutomationController {
 		unloadEnabled = value.unload;
 		eatEnabled = value.eat;
 		durabilityRecoveryEnabled = value.durabilityRecovery;
+		crossDimensionRepairEnabled = value.crossDimensionRepair;
 		resupplyEnabled = value.resupply;
 		elytraNavigationEnabled = value.elytraNavigation;
 		sleepEnabled = value.sleep;
@@ -623,13 +626,14 @@ public final class AutomationController {
 	}
 
 	private void beginRepairFlow(boolean debug) {
-		if (!baritone.getPlayerContext().world().dimension().equals(Level.OVERWORLD)) {
+		if (crossDimensionRepairEnabled && !baritone.getPlayerContext().world().dimension().equals(Level.OVERWORLD)) {
 			transition(AutomationState.ERROR, Translations.DETAIL.message("repair_requires_overworld"));
 			return;
 		}
 		if (!validateRepairConfigurationValues()) return;
 		repair.previousState = state;
 		repair.debugOnly = debug;
+		repair.crossDimension = crossDimensionRepairEnabled;
 		miningReturnPoint = baritone.getPlayerContext().playerFeet();
 		miningReturnDimension = baritone.getPlayerContext().world().dimension();
 		returnAction = ReturnAction.AFTER_REPAIR;
@@ -642,13 +646,19 @@ public final class AutomationController {
 		repair.furnaceIndex = 0;
 		stopProcesses();
 		applyRepairRestrictions();
-		repair.stage = RepairFlow.Stage.OUTBOUND_PERIMETER_PORTAL;
-		startRepairNavigation(position(perimeterPortalOverworld), AutomationState.NAVIGATING_TO_PERIMETER_PORTAL);
+		if (repair.crossDimension) {
+			repair.stage = RepairFlow.Stage.OUTBOUND_PERIMETER_PORTAL;
+			startRepairNavigation(position(perimeterPortalOverworld), AutomationState.NAVIGATING_TO_PERIMETER_PORTAL);
+		} else {
+			repair.stage = RepairFlow.Stage.REPAIR_MACHINE;
+			startRepairNavigation(closestFurnaceStand(repair.furnaces.getFirst()), AutomationState.NAVIGATING_TO_REPAIR_MACHINE);
+		}
 	}
 
 	private boolean validateRepairConfigurationValues() {
-		if (perimeterPortalOverworld == null || perimeterPortalNether == null || repairPortalOverworld == null
-				|| repairPortalNether == null || furnaceRowStart == null || furnaceRowEnd == null) {
+		if (furnaceRowStart == null || furnaceRowEnd == null || crossDimensionRepairEnabled
+				&& (perimeterPortalOverworld == null || perimeterPortalNether == null || repairPortalOverworld == null
+				|| repairPortalNether == null)) {
 			transition(AutomationState.ERROR, Translations.DETAIL.message("repair_configuration_incomplete"));
 			return false;
 		}
@@ -656,8 +666,9 @@ public final class AutomationController {
 	}
 
 	private boolean hasUsableRepairConfiguration() {
-		if (perimeterPortalOverworld == null || perimeterPortalNether == null || repairPortalOverworld == null
-				|| repairPortalNether == null || furnaceRowStart == null || furnaceRowEnd == null) return false;
+		if (furnaceRowStart == null || furnaceRowEnd == null || crossDimensionRepairEnabled
+				&& (perimeterPortalOverworld == null || perimeterPortalNether == null || repairPortalOverworld == null
+				|| repairPortalNether == null)) return false;
 		int changedAxes = (furnaceRowStart.x == furnaceRowEnd.x ? 0 : 1)
 				+ (furnaceRowStart.y == furnaceRowEnd.y ? 0 : 1)
 				+ (furnaceRowStart.z == furnaceRowEnd.z ? 0 : 1);
@@ -705,8 +716,9 @@ public final class AutomationController {
 		if (navigationState == AutomationState.NAVIGATING_TO_PERIMETER_PORTAL) enableBreakingForNavigation();
 		else disablePlacementForNavigation();
 		if (repair.stage == RepairFlow.Stage.REPAIR_MACHINE) {
-			navigation.walk(new GoalComposite(furnaceStandPositions(repair.furnaces.get(repair.furnaceIndex)).stream()
-					.map(GoalBlock::new).toArray(Goal[]::new)));
+			List<BlockPos> stands = furnaceStandPositions(repair.furnaces.get(repair.furnaceIndex));
+			if (stands.isEmpty()) navigation.walk(new GoalBlock(repair.navigationTarget));
+			else navigation.walk(new GoalComposite(stands.stream().map(GoalBlock::new).toArray(Goal[]::new)));
 		} else {
 			navigation.walk(new GoalBlock(repair.navigationTarget));
 		}
@@ -921,14 +933,22 @@ public final class AutomationController {
 		return interactionPositionFinder.find(Minecraft.getInstance().level, target);
 	}
 
+	private List<BlockPos> bedStandPositions(BlockPos bed) {
+		return bedInteractionPositionFinder.find(Minecraft.getInstance().level, bed);
+	}
+
 	private BlockPos closestFurnaceStand(BlockPos furnace) {
 		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
 		return furnaceStandPositions(furnace).stream().min(Comparator.comparingDouble(player::distSqr))
-				.orElseThrow(() -> new IllegalStateException("No safe reachable-distance stand was found for furnace " + furnace.toShortString() + "."));
+				.orElse(furnace.above());
 	}
 
 	private Optional<BlockPos> closestInteractionStand(BlockPos target) {
 		return interactionPositionFinder.closest(Minecraft.getInstance().level, target, baritone.getPlayerContext().playerFeet());
+	}
+
+	private Optional<BlockPos> closestBedStand(BlockPos bed) {
+		return bedInteractionPositionFinder.closest(Minecraft.getInstance().level, bed, baritone.getPlayerContext().playerFeet());
 	}
 
 	private boolean canReachFurnace(BlockPos furnace) {
@@ -942,6 +962,11 @@ public final class AutomationController {
 	private boolean isAtInteractionStand(BlockPos target) {
 		return interactionPositionFinder.isAtValidPosition(
 				Minecraft.getInstance().level, target, baritone.getPlayerContext().playerFeet());
+	}
+
+	private boolean isAtBedStand(BlockPos bed) {
+		return bedInteractionPositionFinder.isAtValidPosition(
+				Minecraft.getInstance().level, bed, baritone.getPlayerContext().playerFeet());
 	}
 
 	private void applyRepairRestrictions() {
@@ -1304,7 +1329,7 @@ public final class AutomationController {
 		miningReturnDimension = baritone.getPlayerContext().world().dimension();
 		returnAction = ReturnAction.AFTER_SLEEP;
 		sleep.bed = position(bedPoint);
-		sleep.stand = closestInteractionStand(sleep.bed).orElse(sleep.bed.above());
+		sleep.stand = closestBedStand(sleep.bed).orElse(sleep.bed.above());
 		sleep.flying = false;
 		sleep.flightAttempts = 0;
 		sleep.interactionTicks = 0;
@@ -1320,12 +1345,12 @@ public final class AutomationController {
 	private void startWalkingToBed() {
 		sleep.flying = false;
 		disablePlacementForNavigation();
-		if (isAtInteractionStand(sleep.bed)) {
+		if (isAtBedStand(sleep.bed)) {
 			restoreAllowPlace();
 			beginSleeping();
 			return;
 		}
-		List<BlockPos> stands = interactionStandPositions(sleep.bed);
+		List<BlockPos> stands = bedStandPositions(sleep.bed);
 		if (!stands.isEmpty()) {
 			sleep.stand = stands.stream().min(Comparator.comparingDouble(baritone.getPlayerContext().playerFeet()::distSqr)).orElseThrow();
 			navigation.walk(new GoalComposite(stands.stream().map(GoalBlock::new).toArray(Goal[]::new)));
@@ -1359,7 +1384,7 @@ public final class AutomationController {
 			beginReturnToMine();
 			return;
 		}
-		if (isAtInteractionStand(sleep.bed)) {
+		if (isAtBedStand(sleep.bed)) {
 			stopProcesses();
 			restoreElytraMinimumDurability();
 			restoreElytraFireworkReserve();
@@ -1674,7 +1699,8 @@ public final class AutomationController {
 
 	private boolean isMonitoredItem(ItemStack stack) {
 		return !stack.isEmpty() && stack.isDamageableItem()
-				&& (stack.is(Items.ELYTRA) || stack.getItem().components().has(DataComponents.TOOL));
+				&& (stack.getItem().components().has(DataComponents.TOOL)
+				|| elytraNavigationEnabled && stack.is(Items.ELYTRA));
 	}
 
 	private boolean isLowMonitoredItem(ItemStack stack) {
@@ -1925,6 +1951,12 @@ public final class AutomationController {
 	private ReturnWaypoint chooseReturnWaypoint() {
 		ResourceKey<Level> currentDimension = baritone.getPlayerContext().world().dimension();
 		BlockPos current = baritone.getPlayerContext().playerFeet();
+		if (repair.stage != null && !repair.crossDimension) {
+			if (!currentDimension.equals(miningReturnDimension)) {
+				throw new IllegalStateException("Local repair cannot return across dimensions.");
+			}
+			return ReturnWaypoint.MINE;
+		}
 		List<ReturnRouteCandidate> candidates = new ArrayList<>();
 		if (currentDimension.equals(miningReturnDimension)) {
 			candidates.add(new ReturnRouteCandidate(ReturnWaypoint.MINE, distance(current, miningReturnPoint)));
@@ -2314,7 +2346,9 @@ public final class AutomationController {
 
 	private void classify(StackSlot slot, List<StackSlot> tools, List<StackSlot> elytras) {
 		if (slot.stack().isEmpty() || !slot.stack().isDamageableItem()) return;
-		if (slot.stack().is(Items.ELYTRA)) elytras.add(slot);
+		if (slot.stack().is(Items.ELYTRA)) {
+			if (elytraNavigationEnabled) elytras.add(slot);
+		}
 		else if (slot.stack().getItem().components().has(DataComponents.TOOL)) tools.add(slot);
 	}
 
@@ -2547,10 +2581,11 @@ public final class AutomationController {
 
 	private List<String> validateRepairConfiguration(PerimeterConfig config) {
 		List<String> invalid = new ArrayList<>();
-		if (config.perimeterPortalOverworld == null) invalid.add("perimeter_portal_overworld");
-		if (config.perimeterPortalNether == null) invalid.add("perimeter_portal_nether");
-		if (config.repairPortalOverworld == null) invalid.add("repair_portal_overworld");
-		if (config.repairPortalNether == null) invalid.add("repair_portal_nether");
+		boolean crossDimension = config.functions == null || config.functions.crossDimensionRepair;
+		if (crossDimension && config.perimeterPortalOverworld == null) invalid.add("perimeter_portal_overworld");
+		if (crossDimension && config.perimeterPortalNether == null) invalid.add("perimeter_portal_nether");
+		if (crossDimension && config.repairPortalOverworld == null) invalid.add("repair_portal_overworld");
+		if (crossDimension && config.repairPortalNether == null) invalid.add("repair_portal_nether");
 		if (config.furnaceRowStart == null) invalid.add("furnace_row_start");
 		if (config.furnaceRowEnd == null) invalid.add("furnace_row_end");
 		if (config.furnaceRowStart != null && config.furnaceRowEnd != null) {

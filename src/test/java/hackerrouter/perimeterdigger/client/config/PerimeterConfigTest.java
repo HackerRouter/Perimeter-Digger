@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PerimeterConfigTest {
 	@Test
@@ -24,5 +25,10 @@ class PerimeterConfigTest {
 		assertNotNull(config.unloadingWhitelist);
 		assertNotNull(config.functions);
 		assertNotNull(config.advanced);
+	}
+
+	@Test
+	void crossDimensionRepairIsEnabledByDefault() {
+		assertTrue(new FunctionConfig().crossDimensionRepair);
 	}
 }

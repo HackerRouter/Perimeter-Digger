@@ -5,6 +5,7 @@ public final class FunctionConfig {
 	public boolean unload = true;
 	public boolean eat = true;
 	public boolean durabilityRecovery = true;
+	public boolean crossDimensionRepair = true;
 	public boolean resupply = true;
 	public boolean elytraNavigation = true;
 	public boolean sleep = false;

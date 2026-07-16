@@ -24,7 +24,7 @@ import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.literal;
 
 final class FunctionCommand {
 	private static final List<String> KEYS = List.of(
-			"collect_drops", "unload", "eat", "durability_recovery", "resupply", "elytra_navigation", "sleep"
+			"collect_drops", "unload", "eat", "durability_recovery", "cross_dimension_repair", "resupply", "elytra_navigation", "sleep"
 	);
 	private final WorldConfigManager configs;
 	private final AutomationController controller;
@@ -54,6 +54,7 @@ final class FunctionCommand {
 				case "unload" -> functions.unload = enabled;
 				case "eat" -> functions.eat = enabled;
 				case "durability_recovery" -> functions.durabilityRecovery = enabled;
+				case "cross_dimension_repair" -> functions.crossDimensionRepair = enabled;
 				case "resupply" -> functions.resupply = enabled;
 				case "elytra_navigation" -> functions.elytraNavigation = enabled;
 				case "sleep" -> functions.sleep = enabled;
@@ -80,6 +81,7 @@ final class FunctionCommand {
 					.append(field(Translations.COMMAND.tr("function.unload"), functions.unload)).append(separator())
 					.append(field(Translations.COMMAND.tr("function.eat"), functions.eat)).append(separator())
 					.append(field(Translations.COMMAND.tr("function.durability_recovery"), functions.durabilityRecovery)).append(separator())
+					.append(field(Translations.COMMAND.tr("function.cross_dimension_repair"), functions.crossDimensionRepair)).append(separator())
 					.append(field(Translations.COMMAND.tr("function.resupply"), functions.resupply)).append(separator())
 					.append(field(Translations.COMMAND.tr("function.elytra_navigation"), functions.elytraNavigation)).append(separator())
 					.append(field(Translations.COMMAND.tr("function.sleep"), functions.sleep))

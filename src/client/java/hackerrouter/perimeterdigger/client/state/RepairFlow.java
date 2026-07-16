@@ -27,6 +27,7 @@ final class RepairFlow {
 	int stableTicks;
 	Plan plan;
 	boolean debugOnly;
+	boolean crossDimension = true;
 
 	void reset() {
 		previousState = AutomationState.IDLE;
@@ -49,6 +50,7 @@ final class RepairFlow {
 		stableTicks = 0;
 		plan = null;
 		debugOnly = false;
+		crossDimension = true;
 	}
 
 	enum Stage {

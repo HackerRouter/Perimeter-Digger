@@ -25,9 +25,13 @@ final class CommandOutput {
 	}
 
 	static MutableComponent field(Component name, Object value) {
+		return field(name, valueComponent(value));
+	}
+
+	static MutableComponent field(Component name, MutableComponent value) {
 		return Component.empty().append(name.copy().withStyle(ChatFormatting.YELLOW))
 				.append(Component.literal("=").withStyle(ChatFormatting.GRAY))
-				.append(valueComponent(value));
+				.append(value);
 	}
 
 	static MutableComponent field(String name, MutableComponent value) {
