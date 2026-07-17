@@ -291,4 +291,12 @@ The mod JAR is written to `build/libs/`.
 
 ## License
 
-Perimeter Digger is available under the [MIT License](LICENSE).
+Copyright (C) 2026 HackerRouter.
+
+Perimeter Digger is free software licensed under the [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`). You may redistribute and modify it under those terms. It is provided without any warranty, including the implied warranties of merchantability or fitness for a particular purpose.
+
+Unless explicitly stated otherwise, contributions submitted to this repository are licensed under `GPL-3.0-or-later`.
+
+The modified Baritone and Nether Pathfinder projects remain subject to the licenses and notices in their respective repositories. Their names and links identify dependencies and do not imply that their code is relicensed by this project.
+
+Java source files receive the project license header automatically during compilation. Run `./gradlew licenseFormat` (or `gradlew.bat licenseFormat` on Windows) to apply it explicitly.

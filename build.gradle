@@ -1,6 +1,7 @@
 plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 	id 'maven-publish'
+	id 'com.github.hierynomus.license' version '0.16.1'
 }
 
 version = project.mod_version
@@ -55,6 +56,49 @@ processResources {
 
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 25
+}
+
+license {
+	header = rootProject.file('HEADER.txt')
+	include '**/*.java'
+	skipExistingHeaders = true
+
+	headerDefinitions {
+		SLASHSTAR_STYLE_NEWLINE {
+			firstLine = "/*"
+			beforeEachLine = " * "
+			endLine = " */" + System.lineSeparator()
+			afterEachLine = ""
+			skipLinePattern = null
+			firstLineDetectionPattern = "(\\s|\\t)*/\\*.*\$"
+			lastLineDetectionPattern = ".*\\*/(\\s|\\t)*\$"
+			allowBlankLines = false
+			isMultiline = true
+			padLines = false
+		}
+	}
+
+	mapping {
+		java = 'SLASHSTAR_STYLE_NEWLINE'
+	}
+
+	ext {
+		name = 'Perimeter Digger'
+		author = 'HackerRouter'
+		year = Calendar.getInstance().get(Calendar.YEAR).toString()
+	}
+}
+
+tasks.named('compileJava').configure {
+	dependsOn tasks.named('licenseFormatMain')
+}
+
+tasks.named('compileClientJava').configure {
+	dependsOn tasks.named('licenseFormatClient')
+}
+
+tasks.named('compileTestJava').configure {
+	dependsOn tasks.named('licenseFormatTest')
 }
 
 java {
