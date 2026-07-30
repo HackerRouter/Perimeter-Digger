@@ -1116,7 +1116,7 @@ public final class AutomationController {
 
 	private void startWalkingToSupply() {
 		supply.flying = false;
-		disablePlacementForNavigation();
+		disableBreakingAndPlacementForNavigation();
 		BlockPos chest = position(supply.point);
 		if (isAtInteractionStand(chest)) {
 			restoreAllowPlace();
@@ -1178,6 +1178,10 @@ public final class AutomationController {
 
 	private void disablePlacementForNavigation() {
 		navigation.disablePlacement();
+	}
+
+	private void disableBreakingAndPlacementForNavigation() {
+		navigation.disableBreakingAndPlacement();
 	}
 
 	private void enableBreakingForNavigation() {
@@ -1903,7 +1907,8 @@ public final class AutomationController {
 		unload.point = unloadingPoints.stream()
 				.min(Comparator.comparingLong(point -> horizontalDistanceSquared(player, point.point())))
 				.orElseThrow();
-		UnloadFlow.Candidate preferred = findUnloadCandidates(unload.point.point(), player.y).stream().findFirst().orElse(null);
+		int preferredY = Math.max(player.y, unload.point.point().minY);
+		UnloadFlow.Candidate preferred = findUnloadCandidates(unload.point.point(), preferredY).stream().findFirst().orElse(null);
 		BlockPos flightTarget = preferred == null
 				? new BlockPos(unload.point.point().x, player.y, unload.point.point().z)
 				: preferred.position();
@@ -1927,7 +1932,8 @@ public final class AutomationController {
 		navigation.stopFlying();
 		disablePlacementForNavigation();
 		int currentY = baritone.getPlayerContext().playerFeet().y;
-		unload.candidates = findUnloadCandidates(unload.point.point(), currentY);
+		int preferredY = Math.max(currentY, unload.point.point().minY);
+		unload.candidates = findUnloadCandidates(unload.point.point(), preferredY);
 		unload.candidateIndex = 0;
 		if (unload.candidates.isEmpty()) {
 			restoreAllowPlace();
