@@ -127,6 +127,11 @@ public final class AutomationController {
 	private Vec3 watchdogPosition;
 	private int watchdogStationaryScans;
 	private int watchdogRetries;
+	private Vec3 miningStallPosition;
+	private int miningStallStationaryScans;
+	private int miningStallLastTriggerTick;
+	private boolean miningStallRecovery;
+	private BlockPos miningStallRecoveryTarget;
 	private int stableInventoryScans;
 	private int lastInventoryItemCount;
 	private boolean miningCompletePending;
@@ -310,6 +315,7 @@ public final class AutomationController {
 	public void tick() {
 		if (baritone == null || baritone.getPlayerContext().player() == null) return;
 		executeInventoryClick();
+		if (miningStallRecovery && tickMiningStallRecovery()) return;
 		if (state == AutomationState.EATING) {
 			tickEating();
 			return;
@@ -375,6 +381,7 @@ public final class AutomationController {
 		if (state == AutomationState.IDLE || state == AutomationState.ERROR || state == AutomationState.COMPLETE || state == AutomationState.PAUSED
 				) return;
 		if (!inventoryClicks.isEmpty()) return;
+		if (state == AutomationState.MINING && advanced.miningStallDetectionEnabled) tickMiningStallDetection();
 		ResourceCheck resources = inspectResources();
 		if (sleepEnabled && bedPoint != null && isBedTime()) {
 			beginSleepFlow(false);
@@ -399,9 +406,14 @@ public final class AutomationController {
 			if (durabilityRecoveryMode.equals("supply_point") && durabilitySupplyPoint != null) {
 				beginSupply(SupplyFlow.Kind.DURABILITY, false);
 				return;
-			} else if (durabilityRecoveryMode.equals("repair_portal") && hasUsableRepairConfiguration()) {
-				beginRepairFlow(false);
-				return;
+			} else if (durabilityRecoveryMode.equals("repair_portal")) {
+				if (hasUsableRepairConfiguration()) {
+					beginRepairFlow(false);
+					return;
+				} else if (durabilitySupplyPoint != null) {
+					beginSupply(SupplyFlow.Kind.DURABILITY, false);
+					return;
+				}
 			}
 		}
 		if (resupplyEnabled && consumableSupplyPoint != null
@@ -430,6 +442,7 @@ public final class AutomationController {
 		returnPortalWaypoint = null;
 		inventoryClicks.clear();
 		resetNavigationWatchdog();
+		resetMiningStall();
 		unload.reset();
 		clearSleepContext();
 		clearSupplyContext();
@@ -558,6 +571,7 @@ public final class AutomationController {
 	}
 
 	private void startMiningCycle() {
+		resetMiningStall();
 		int emptySlots = emptyInventorySlots();
 		if (emptySlots == 0 && unloadEnabled) {
 			requestUnload();
@@ -572,6 +586,7 @@ public final class AutomationController {
 	}
 
 	private void resumeMiningCycle() {
+		resetMiningStall();
 		int emptySlots = emptyInventorySlots();
 		if (emptySlots == 0 && unloadEnabled) {
 			requestUnload();
@@ -1023,6 +1038,24 @@ public final class AutomationController {
 		return interactionPositionFinder.closest(Minecraft.getInstance().level, bed, baritone.getPlayerContext().playerFeet());
 	}
 
+	private BlockPos findSafeStandNear(BlockPos chest) {
+		BetterBlockPos player = baritone.getPlayerContext().playerFeet();
+		List<BlockPos> candidates = new ArrayList<>();
+		for (int dy = -1; dy <= 1; dy++) {
+			BlockPos base = chest.atY(chest.getY() + dy);
+			for (int dx = -advanced.unloadLandingSearchRadius; dx <= advanced.unloadLandingSearchRadius; dx++) {
+				for (int dz = -advanced.unloadLandingSearchRadius; dz <= advanced.unloadLandingSearchRadius; dz++) {
+					if (dx == 0 && dz == 0 && dy == 0) continue;
+					BlockPos position = base.offset(dx, 0, dz);
+					if (isSafeStandingPosition(position)) {
+						candidates.add(position);
+					}
+				}
+			}
+		}
+		return candidates.stream().min(Comparator.comparingDouble(player::distSqr)).orElse(null);
+	}
+
 	private boolean canReachFurnace(BlockPos furnace) {
 		return canReachInteractionTarget(furnace);
 	}
@@ -1116,7 +1149,7 @@ public final class AutomationController {
 
 	private void startWalkingToSupply() {
 		supply.flying = false;
-		disablePlacementForNavigation();
+		enableBreakingForNavigation();
 		BlockPos chest = position(supply.point);
 		if (isAtInteractionStand(chest)) {
 			restoreAllowPlace();
@@ -1127,15 +1160,22 @@ public final class AutomationController {
 		if (!stands.isEmpty()) {
 			supply.stand = stands.stream().min(Comparator.comparingDouble(baritone.getPlayerContext().playerFeet()::distSqr)).orElseThrow();
 			navigation.walk(new GoalComposite(stands.stream().map(GoalBlock::new).toArray(Goal[]::new)));
-		} else {
-			supply.stand = chest.above();
-			navigation.walk(new GoalBlock(supply.stand));
+			transition(supplyNavigationState(), Translations.DETAIL.message("walking_supply", supply.kind.displayName, supply.stand.toShortString()));
+			return;
 		}
-		transition(supplyNavigationState(), Translations.DETAIL.message("walking_supply", supply.kind.displayName, supply.stand.toShortString()));
+		BlockPos widerStand = findSafeStandNear(chest);
+		if (widerStand != null) {
+			supply.stand = widerStand;
+			navigation.walk(new GoalBlock(supply.stand));
+			transition(supplyNavigationState(), Translations.DETAIL.message("walking_supply", supply.kind.displayName, supply.stand.toShortString()));
+			return;
+		}
+		restoreAllowPlace();
+		transition(AutomationState.ERROR, Translations.DETAIL.message("supply_no_safe_stand", supply.kind.displayName, chest.toShortString()));
 	}
 
 	private void tickSupplyNavigation() {
-		if (isAtInteractionStand(position(supply.point))) {
+		if (isAtInteractionStand(position(supply.point)) || baritone.getPlayerContext().playerFeet().equals(supply.stand)) {
 			navigation.stopFlying();
 			navigation.stopWalking();
 			restoreElytraMinimumDurability();
@@ -1178,6 +1218,10 @@ public final class AutomationController {
 
 	private void disablePlacementForNavigation() {
 		navigation.disablePlacement();
+	}
+
+	private void disableBreakingAndPlacementForNavigation() {
+		navigation.disableBreakingAndPlacement();
 	}
 
 	private void enableBreakingForNavigation() {
@@ -1903,7 +1947,8 @@ public final class AutomationController {
 		unload.point = unloadingPoints.stream()
 				.min(Comparator.comparingLong(point -> horizontalDistanceSquared(player, point.point())))
 				.orElseThrow();
-		UnloadFlow.Candidate preferred = findUnloadCandidates(unload.point.point(), player.y).stream().findFirst().orElse(null);
+		int preferredY = Math.max(player.y, unload.point.point().minY);
+		UnloadFlow.Candidate preferred = findUnloadCandidates(unload.point.point(), preferredY).stream().findFirst().orElse(null);
 		BlockPos flightTarget = preferred == null
 				? new BlockPos(unload.point.point().x, player.y, unload.point.point().z)
 				: preferred.position();
@@ -1927,7 +1972,8 @@ public final class AutomationController {
 		navigation.stopFlying();
 		disablePlacementForNavigation();
 		int currentY = baritone.getPlayerContext().playerFeet().y;
-		unload.candidates = findUnloadCandidates(unload.point.point(), currentY);
+		int preferredY = Math.max(currentY, unload.point.point().minY);
+		unload.candidates = findUnloadCandidates(unload.point.point(), preferredY);
 		unload.candidateIndex = 0;
 		if (unload.candidates.isEmpty()) {
 			restoreAllowPlace();
@@ -2317,6 +2363,70 @@ public final class AutomationController {
 		watchdogPosition = null;
 		watchdogStationaryScans = 0;
 		watchdogRetries = 0;
+	}
+
+	private void tickMiningStallDetection() {
+		Vec3 position = baritone.getPlayerContext().player().position();
+		if (miningStallPosition == null || position.distanceToSqr(miningStallPosition) > 0.25) {
+			miningStallPosition = position;
+			miningStallStationaryScans = 0;
+			return;
+		}
+		if (++miningStallStationaryScans < monitorScans(advanced.miningStallTimeoutSeconds)) return;
+		int cooldownTicks = ticks(advanced.miningStallCooldownSeconds);
+		if (tickCounter - miningStallLastTriggerTick < cooldownTicks) return;
+		BlockPos target = randomNearbySafeTarget(advanced.miningStallMovementDistance);
+		if (target == null) return;
+		miningStallStationaryScans = 0;
+		miningStallLastTriggerTick = tickCounter;
+		miningStallRecovery = true;
+		miningStallRecoveryTarget = target;
+		miningProcess.pause();
+		navigation.walk(new GoalBlock(target));
+		transition(AutomationState.MINING, Translations.DETAIL.message("mining_stall_recovery", target.toShortString()));
+	}
+
+	private boolean tickMiningStallRecovery() {
+		BlockPos feet = baritone.getPlayerContext().playerFeet();
+		if (feet.equals(miningStallRecoveryTarget) || !navigation.isWalking()) {
+			navigation.stopWalking();
+			miningStallRecovery = false;
+			miningStallRecoveryTarget = null;
+			miningStallPosition = null;
+			miningStallStationaryScans = 0;
+			resumeMiningCycle();
+			return true;
+		}
+		return false;
+	}
+
+	private BlockPos randomNearbySafeTarget(int distance) {
+		BlockPos feet = baritone.getPlayerContext().playerFeet();
+		double[] angles = new double[8];
+		for (int i = 0; i < 8; i++) angles[i] = Math.random() * 2.0 * Math.PI;
+		for (double angle : angles) {
+			int dx = (int) Math.round(Math.sin(angle) * distance);
+			int dz = (int) Math.round(Math.cos(angle) * distance);
+			if (dx == 0 && dz == 0) continue;
+			BlockPos candidate = feet.offset(dx, 0, dz);
+			if (isSafeStandingPosition(candidate)) return candidate;
+		}
+		for (int dx = -distance; dx <= distance; dx++) {
+			for (int dz = -distance; dz <= distance; dz++) {
+				if (dx == 0 && dz == 0) continue;
+				if (dx * dx + dz * dz > distance * distance) continue;
+				BlockPos candidate = feet.offset(dx, 0, dz);
+				if (isSafeStandingPosition(candidate)) return candidate;
+			}
+		}
+		return null;
+	}
+
+	private void resetMiningStall() {
+		miningStallPosition = null;
+		miningStallStationaryScans = 0;
+		miningStallRecovery = false;
+		miningStallRecoveryTarget = null;
 	}
 
 	private int firstDisposableSlot() {

@@ -49,4 +49,8 @@ public final class AdvancedConfig {
 	public double supplyInteractionTimeoutSeconds = 2.0;
 	public double furnaceInteractionTimeoutSeconds = 2.0;
 	public int flightRetryCount = 2;
+	public boolean miningStallDetectionEnabled = true;
+	public double miningStallTimeoutSeconds = 8.0;
+	public int miningStallMovementDistance = 3;
+	public double miningStallCooldownSeconds = 15.0;
 }

@@ -87,6 +87,13 @@ public final class NavigationService {
 		BaritoneAPI.getSettings().allowPlace.value = false;
 	}
 
+	public void disableBreakingAndPlacement() {
+		if (savedAllowBreak == null) savedAllowBreak = BaritoneAPI.getSettings().allowBreak.value;
+		if (savedAllowPlace == null) savedAllowPlace = BaritoneAPI.getSettings().allowPlace.value;
+		BaritoneAPI.getSettings().allowBreak.value = false;
+		BaritoneAPI.getSettings().allowPlace.value = false;
+	}
+
 	public void enableBreakingWithoutPlacement() {
 		if (savedAllowBreak == null) savedAllowBreak = BaritoneAPI.getSettings().allowBreak.value;
 		if (savedAllowPlace == null) savedAllowPlace = BaritoneAPI.getSettings().allowPlace.value;
